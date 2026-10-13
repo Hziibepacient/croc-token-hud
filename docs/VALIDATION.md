@@ -1,12 +1,14 @@
 # Validation and limits
 
-## 1.3.0-beta.7 — application following
+## 1.3.0-beta.8 — application following
 
-On Windows x64 / Python 3.14.8 / Qt 6.10.3, the complete Python suite passed **75 checks**, including the Qt menu/owner-close regression. The final focused application-follow suite passed **21 checks**, including two subsequently added direct-launcher checks. Coverage includes idle/debounce, last-client grace, parallel clients, manual quit suppression, preserving manually launched windows, recovery during an automatic close, exclusive watcher ownership, executable classification/exact custom paths, safe failed registration, headless operation without Qt, latest-log ties, stale exited-process status, argument/exit-code passthrough, shared launcher locks and a real watcher→dashboard→owned-close round trip. Synthetic logs and short fixture timers are used for lifecycle integration; no real chat contents are captured.
+On Windows x64 / Python 3.14.8 / Qt 6.10.3, the complete Python suite passed **78 checks**, including 22 application-follow checks and the Qt menu/owner-close regression. Coverage includes idle/debounce, last-client grace, parallel clients, manual quit suppression, preserving manually launched windows, recovery during an automatic close, exclusive watcher ownership, executable classification/exact custom paths, safe failed registration, headless operation without Qt, latest-log ties, stale exited-process status, argument/exit-code passthrough, shared launcher locks, data-choice migration and a real watcher→dashboard→owned-close round trip. Synthetic logs and short fixture timers are used for lifecycle integration; no real chat contents are captured.
 
 All **30 native Windows binding checks passed**, including CLI/IDE activity display without a Desktop window, explicit labeling, pin precedence, the replacement menu, wrong-owner rejection and owned shutdown. OS task registration and other-platform CI results are recorded after execution below. Existing metric formulas are unchanged. Real WSL/SSH hosts, macOS LaunchAgent/systemd login cycles and every IDE are not locally available; source paths and CI evidence must not be described as those clients' end-to-end acceptance.
 
 A uniquely named temporary Windows scheduled task completed actual migration from this copy's EXE action to its watcher action, owner/config-path verification, removal and repeated removal. The fixture task was removed; no unrelated startup tasks were modified.
+
+Actual installation exposed MSIX AppData redirection: a file visible from Codex was physically under its package LocalCache and absent from Task Scheduler's logical path. The Windows default is now `%USERPROFILE%\.codex-token-hud`; choices migrate without stale metrics or watcher ownership, and an old watcher action is updated. The installed copy was launched by the real task: watcher and owned HUD processes were alive, both state records were fresh, the native window was visible/topmost, display error was zero, and Task Scheduler reported Running. Installation returns without waiting for the background watcher. Local validation did not close the user's Codex application to simulate logout.
 
 ## 1.3.0-beta.5 — native macOS/Linux overlay
 

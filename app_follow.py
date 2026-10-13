@@ -257,11 +257,13 @@ def register(config, value, turn_on):
         literal = lambda s: "'" + str(s).replace("'", "''") + "'"
         task = "CodexTokenHud-" + os.environ["USERNAME"]
         args = subprocess.list2cmdline(command[1:])
+        legacy = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "CodexTokenHud/app-follow/config.json"
+        legacy_args = subprocess.list2cmdline(watcher_command(legacy)[1:])
         # A legacy task pointing to this HUD is migrated. Never replace another
         # copy's task, even when both copies use the same Python interpreter.
         script = "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.Encoding]::UTF8\n"
         script += f"$taskName={literal(task)}; $taskOld=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue\n"
-        script += f"if ($taskOld -and -not (($taskOld.Actions[0].Execute -eq {literal(value['installation'])}) -or (($taskOld.Actions[0].Execute -eq {literal(command[0])}) -and ($taskOld.Actions[0].Arguments -eq {literal(args)})))) {{ throw 'Startup task belongs to another copy; disable it there first.' }}\n"
+        script += f"if ($taskOld -and -not (($taskOld.Actions[0].Execute -eq {literal(value['installation'])}) -or (($taskOld.Actions[0].Execute -eq {literal(command[0])}) -and (($taskOld.Actions[0].Arguments -eq {literal(args)}) -or ($taskOld.Actions[0].Arguments -eq {literal(legacy_args)}))))) {{ throw 'Startup task belongs to another copy; disable it there first.' }}\n"
         if turn_on:
             script += f"$taskAction=New-ScheduledTaskAction -Execute {literal(command[0])} -Argument {literal(args)} -WorkingDirectory {literal(str(Path(value['installation']).parent))}\n"
             script += "$taskUser=[Security.Principal.WindowsIdentity]::GetCurrent().Name\n"
@@ -328,6 +330,11 @@ def configure(command, runtime, codex_home, turn_on, config=None, extra=()):
     config = config or default_config()
     installation = str(Path(command[0] if getattr(sys, "frozen", False) or len(command) == 1 else next(v for v in command[1:] if v.endswith(".py"))).resolve())
     saved = read_selection(config)
+    if os.name == "nt" and not saved:
+        legacy = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "CodexTokenHud/app-follow/config.json"
+        previous = read_selection(legacy)
+        if previous.get("installation") == installation:
+            saved = previous
     if saved.get("enabled") and saved.get("installation") != installation:
         raise RuntimeError("Application following is enabled for another copy; disable it there first")
     value = {"enabled": bool(turn_on), "installation": installation, "command": command,

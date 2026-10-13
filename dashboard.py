@@ -26,10 +26,31 @@ def data_directory() -> Path:
     if custom:
         return Path(custom).expanduser().resolve()
     if os.name == "nt":
-        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "CodexTokenHud"
+        target = Path.home() / ".codex-token-hud"
+        legacy = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "CodexTokenHud"
+        migrate_windows_data(target, legacy)
+        return target
     if sys.platform == "darwin":
         return Path.home() / "Library/Application Support/CodexTokenHud"
     return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "codex-token-hud"
+
+
+def migrate_windows_data(target, legacy):
+    # AppData can be virtualized when launched by the MSIX Codex app. A normal
+    # user-profile directory is visible to Desktop/CLI/IDE and Task Scheduler.
+    # Copy only user choices, never stale telemetry or watcher ownership.
+    for name in ("settings.json", "user-layout.json", "runtime/manual-binding.json", "runtime/pinned-layout.json",
+                 "runtime/range-result.json", "overlay-runtime/manual-binding.json", "overlay-runtime/overlay-layout.json",
+                 "overlay-runtime/range-result.json"):
+        source, destination = legacy / name, target / name
+        if source.is_file() and not destination.exists():
+            content = source.read_bytes()
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with destination.open("xb") as output:
+                    output.write(content)
+            except FileExistsError:
+                pass
 
 
 class Dashboard:

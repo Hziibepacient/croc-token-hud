@@ -29,6 +29,8 @@ class OverlayGuiTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.environment = patch.dict(os.environ, {"CODEX_TOKEN_HUD_HOME": str(self.root / "user-data")})
+        self.environment.start()
         self.server = start_server(self.root, self.root / "runtime", native_enabled=True, native_follow_mode="activity")
         self.hud = Hud(self.server, "en", start_worker=False, tray=False)
         self.hud.show()
@@ -43,6 +45,7 @@ class OverlayGuiTests(unittest.TestCase):
         self.app.processEvents()
         self.server.shutdown()
         self.server.server_close()
+        self.environment.stop()
         self.temp.cleanup()
 
     def test_real_visible_topmost_window_and_mac_native_flags(self):

@@ -1,4 +1,6 @@
-# Codex Token HUD 1.3.0-beta.7
+# Codex Token HUD 1.3.0-beta.8
+
+Windows now uses `%USERPROFILE%\.codex-token-hud` to share settings with Task Scheduler outside a packaged Codex process. Existing choices and old watcher registration migrate; no stale telemetry is copied. This fixes the MSIX-specific startup issue found during real installation. The actual task and its owned native HUD were verified alive and fresh. The installer returns independently of the background watcher.
 
 Application following replaces direct logon HUD startup across supported environments. A small watcher waits for Desktop/CLI/IDE Codex processes, then starts the HUD and statistics service; after the final client closes it exits only its own HUD. Manually launched windows are preserved, and manual quit suppresses repeated launches during the current client session. Windows migrates the old task and labels non-Desktop statistics as latest activity; manual pinning remains authoritative.
 

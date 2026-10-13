@@ -18,9 +18,11 @@ namespace CodexTokenHud
             string customData = Environment.GetEnvironmentVariable("CODEX_TOKEN_HUD_HOME");
             var result = new RuntimeConfiguration { Folder = folder,
                 DataDirectory = Path.GetFullPath(string.IsNullOrWhiteSpace(customData) ?
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexTokenHud") : customData) };
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex-token-hud") : customData) };
             var settings = Json.Read(Path.Combine(folder, "settings.json"));
             var userSettings = Json.Read(Path.Combine(result.DataDirectory, "settings.json"));
+            if (!File.Exists(Path.Combine(result.DataDirectory, "settings.json")) && string.IsNullOrWhiteSpace(customData))
+                userSettings = Json.Read(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexTokenHud", "settings.json"));
             foreach (var item in userSettings) settings[item.Key] = item.Value;
             string home = Json.Text(settings, "codex_home");
             if (string.IsNullOrWhiteSpace(home)) home = Environment.GetEnvironmentVariable("CODEX_HOME");
@@ -47,6 +49,21 @@ namespace CodexTokenHud
         {
             Directory.CreateDirectory(DataDirectory);
             Directory.CreateDirectory(Runtime);
+            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CODEX_TOKEN_HUD_HOME")) &&
+                DataDirectory == Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex-token-hud"))
+            {
+                string legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexTokenHud");
+                foreach (string name in new[] { "settings.json", "user-layout.json", "runtime\\manual-binding.json",
+                    "runtime\\pinned-layout.json", "runtime\\range-result.json" })
+                {
+                    string source = Path.Combine(legacy, name), destination = Path.Combine(DataDirectory, name);
+                    if (File.Exists(source) && !File.Exists(destination))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(destination));
+                        try { File.Copy(source, destination, false); } catch (IOException) { if (!File.Exists(destination)) throw; }
+                    }
+                }
+            }
             // Preserve existing installations' layout once, without publishing or moving their files.
             string oldLayout = Path.Combine(Folder, "user-layout.json");
             if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CODEX_TOKEN_HUD_HOME")) &&
@@ -114,8 +131,13 @@ namespace CodexTokenHud
                 ((dynamic)service).Connect();
                 root = ((dynamic)service).GetFolder("\\");
                 task = ((dynamic)root).GetTask("CodexTokenHud-" + Environment.UserName);
-                return ((dynamic)task).Enabled && string.Equals((string)((dynamic)task).Definition.Actions[1].Path,
-                    Path.Combine(Folder, "CodexTokenHud.exe"), StringComparison.OrdinalIgnoreCase);
+                dynamic action = ((dynamic)task).Definition.Actions[1];
+                string path = action.Path, arguments = action.Arguments;
+                string oldConfig = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexTokenHud", "app-follow", "config.json");
+                bool oldWatcher = string.Equals(path, Pythonw, StringComparison.OrdinalIgnoreCase) &&
+                    arguments.Contains(Path.Combine(Folder, "app_follow.py")) && arguments.Contains(oldConfig);
+                return ((dynamic)task).Enabled && (oldWatcher || string.Equals(path,
+                    Path.Combine(Folder, "CodexTokenHud.exe"), StringComparison.OrdinalIgnoreCase));
             }
             catch { return false; }
             finally

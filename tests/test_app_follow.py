@@ -13,6 +13,24 @@ from test_history import response, write_log
 
 
 class FollowTests(unittest.TestCase):
+    def test_windows_data_migration_keeps_choices_without_stale_telemetry(self):
+        from dashboard import migrate_windows_data
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old, new = root / 'old', root / 'new'
+            atomic_json(old / 'user-layout.json', {'x': 40})
+            atomic_json(old / 'runtime/manual-binding.json', {'thread_id': 'fixture'})
+            atomic_json(old / 'runtime/metrics.json', {'rate': 99})
+            atomic_json(old / 'app-follow/config.json', {'enabled': True})
+            migrate_windows_data(new, old)
+            self.assertEqual((new / 'user-layout.json').read_bytes(), (old / 'user-layout.json').read_bytes())
+            self.assertTrue((new / 'runtime/manual-binding.json').exists())
+            self.assertFalse((new / 'runtime/metrics.json').exists())
+            self.assertFalse((new / 'app-follow/config.json').exists())
+            atomic_json(new / 'user-layout.json', {'x': 80})
+            migrate_windows_data(new, old)
+            self.assertIn('80', (new / 'user-layout.json').read_text())
+
     def test_desktop_cli_ide_backends_without_editor_false_positives(self):
         self.assertEqual(process_kind(r'C:\Program Files\WindowsApps\OpenAI.Codex_26_x64\app\ChatGPT.exe'), 'desktop')
         self.assertEqual(process_kind('/Applications/Codex.app/Contents/MacOS/Codex'), 'desktop')
