@@ -1,10 +1,29 @@
 # Codex Token HUD
 
+## Start with supported applications
+
+Direct logon HUD startup has been replaced by **Start with supported clients** (Windows menu: **随 Codex / CLI / IDE 启动**; also `Install.ps1`). A small user-session watcher waits for Codex Desktop or the shared native Codex backend used by CLI/IDE clients, including compatible VS Code, Cursor, Windsurf and derived integrations. An editor or terminal alone does not trigger it. While idle it does not start the HUD, collector or statistics server. Startup is debounced for about 2 seconds; after the last client exits, the watcher closes only its own HUD after 6–8 seconds. Manually opened HUDs are preserved; manually quitting suppresses relaunch until the clients have all closed and reopened. This copy's old Windows task migrates automatically.
+
+Windows tracks a foreground Desktop chat where available; other client activity is explicitly labeled latest activity, with exact-ID pinning available for parallel chats. macOS/Linux retain their explicit latest-activity/exact-ID modes.
+
+Run the watcher on the log host for WSL/SSH and other hosts. Headless source installs use the dependency-free loopback dashboard and a systemd user service. All previously compatible Python environments also have a direct launcher when desktop autostart/systemd is absent:
+
+```sh
+python3 app_follow.py --enable
+python3 app_follow.py --enable --interface dashboard
+python3 app_follow.py --enable --client-executable /absolute/path/to/compatible-client
+python3 app_follow.py --run codex
+python3 app_follow.py --interface dashboard --run /absolute/path/to/compatible-client arg1 arg2
+python3 app_follow.py --disable
+```
+
+`--client-executable` accepts additional exact paths; `--run` passes the remaining command/arguments through unchanged. These support renamed/additional compatible clients without modifying Codex, IDE or shell settings. They do not add compatibility with another log format. Offline logs remain manually viewable; a cloud-only task has no observable local process or telemetry. See [compatibility](docs/COMPATIBILITY.md) for host requirements and verification limits.
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 Local Codex output speed and input cache statistics, with floating desktop HUDs for Windows/macOS/Linux, a portable browser dashboard, and terminal reports.
 
-**Source version: 1.3.0-beta.5.** Independent project, unaffiliated with OpenAI. Reads local logs without changing Codex or uploading conversations.
+**Source version: 1.3.0-beta.6.** Independent project, unaffiliated with OpenAI. Reads local logs without changing Codex or uploading conversations.
 
 ![Windows HUD](docs/images/hud.png)
 
@@ -35,7 +54,7 @@ Confirmed results are fixed snapshots. Confirm again to update, or use **返回�
 
 Screenshot uses artificial data in macOS ARM64 CI. Linux uses the same layout with its native window backend.
 
-Download the matching `overlay-macos-x64`, `overlay-macos-arm64`, `overlay-linux-x64` or `overlay-linux-arm64` package from [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.5). Development artifacts are also available from [successful CI runs](https://github.com/drkang7/codex-token-hud/actions). Extract the ZIP/tar.gz completely. On macOS, move **CodexTokenHud.app** to Applications and open it. On Linux, run `./CodexTokenHud/CodexTokenHud`. These packages include Python and Qt; no pip installation is required. The macOS beta is ad-hoc signed, not notarized; use the system's Open Anyway option if blocked.
+Download the matching `overlay-macos-x64`, `overlay-macos-arm64`, `overlay-linux-x64` or `overlay-linux-arm64` package from [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.6). Development artifacts are also available from [successful CI runs](https://github.com/drkang7/codex-token-hud/actions). Extract the ZIP/tar.gz completely. On macOS, move **CodexTokenHud.app** to Applications and open it. On Linux, run `./CodexTokenHud/CodexTokenHud`. These packages include Python and Qt; no pip installation is required. The macOS beta is ad-hoc signed, not notarized; use the system's Open Anyway option if blocked.
 
 The native strip provides **tok/s**, **input cache hit rate**, model and sample time. Drag an empty area to move it, and an edge/corner or bottom-right grip to resize it. Layout persists. **Choose chat** searches titles or full IDs and pins a conversation. **Unpin and follow latest activity** follows the log that most recently recorded an event; it does not identify the foreground chat. Simultaneous latest timestamps require an explicit selection. The matching browser panel synchronizes pin/unpin and confirmed range results. **Refresh** rereads logs and acknowledges whether new counts exist. Tray/menu and repeat-launch recovery keep the strip accessible.
 
@@ -95,7 +114,7 @@ Windows ZIPs bundle an architecture-matching private Python runtime. Extract all
 - Windows ARM64: matching Python packaging available; AnyCPU HUD requires compatible Framework 4.8.1 or emulation. Not hardware-verified here.
 - Windows x86: 32-bit Python packaging available, mainly for browser/terminal use. Codex Desktop may not support a 32-bit OS.
 
-The EXE is unsigned and requests the highest available user privilege for an elevated Codex window; administrator accounts may see UAC. Drag the strip's middle to move it and an edge/corner to resize it. Layout persists. Optional startup is available from the tray or `Install.ps1`; `Uninstall.ps1` removes only this copy's task/shortcut and preserves saved data. Exiting the HUD stops its collector and local dashboard service.
+The EXE is unsigned and requests the highest available user privilege for an elevated Codex window; administrator accounts may see UAC. Drag the strip's middle to move it and an edge/corner to resize it. Layout persists. Application following is available from the tray or `Install.ps1`; `Uninstall.ps1` removes only this copy's watcher registration/shortcut and preserves saved data. Exiting the HUD stops its collector and local dashboard service.
 
 **立即刷新数据** now rescans rollouts, follows newly resumed segments even if the database path is stale, rereads the latest file and returns visible pending/success/no-new-count/error feedback. An unresponsive collector reconnects. Refresh cannot cause Codex to publish usage that has not yet been recorded.
 

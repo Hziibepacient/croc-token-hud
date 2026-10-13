@@ -87,5 +87,42 @@ namespace CodexTokenHud
             result.Append('\\', slashes * 2).Append('"');
             return result.ToString();
         }
+
+        internal void ConfigureAppFollowing(bool enabled)
+        {
+            string args = "-I -X utf8 " + Quote(Path.Combine(Folder, "app_follow.py")) +
+                (enabled ? " --enable" : " --disable") + " --windows-exe " + Quote(Path.Combine(Folder, "CodexTokenHud.exe")) +
+                " --config " + Quote(Path.Combine(DataDirectory, "app-follow", "config.json")) +
+                " --runtime " + Quote(Runtime) + " --codex-home " + Quote(CodexHome);
+            using (var process = Process.Start(new ProcessStartInfo(Pythonw, args) {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true,
+                WorkingDirectory = Folder, WindowStyle = ProcessWindowStyle.Hidden }))
+            {
+                var errors = process.StandardError.ReadToEndAsync();
+                var output = process.StandardOutput.ReadToEndAsync();
+                if (!process.WaitForExit(30000)) { process.Kill(); throw new InvalidOperationException("Application-follow setup timed out."); }
+                if (process.ExitCode != 0) throw new InvalidOperationException(errors.Result);
+            }
+        }
+
+        internal bool HasLegacyLogonStartup()
+        {
+            object service = null, root = null, task = null;
+            try
+            {
+                service = Activator.CreateInstance(Type.GetTypeFromProgID("Schedule.Service"));
+                ((dynamic)service).Connect();
+                root = ((dynamic)service).GetFolder("\\");
+                task = ((dynamic)root).GetTask("CodexTokenHud-" + Environment.UserName);
+                return ((dynamic)task).Enabled && string.Equals((string)((dynamic)task).Definition.Actions[1].Path,
+                    Path.Combine(Folder, "CodexTokenHud.exe"), StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+            finally
+            {
+                foreach (object item in new[] { task, root, service })
+                    if (item != null) System.Runtime.InteropServices.Marshal.FinalReleaseComObject(item);
+            }
+        }
     }
 }

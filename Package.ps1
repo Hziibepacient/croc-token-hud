@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Path $taskStage -Force | Out-Null
 & (Join-Path $taskRoot 'Build.ps1') -OutputDirectory $taskStage
 Remove-Item -LiteralPath (Join-Path $taskStage 'AssemblyInfo.g.cs')
 # Explicit allowlist: no account data, debug extracts, local settings, or conversation logs.
-$taskFiles = @('metrics.py', 'history.py', 'dashboard.py', 'stats.py', 'StartDashboard.ps1', 'start-dashboard.sh', 'VERSION', 'README.md', 'README.zh-CN.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
+$taskFiles = @('metrics.py', 'history.py', 'dashboard.py', 'stats.py', 'app_follow.py', 'StartDashboard.ps1', 'start-dashboard.sh', 'VERSION', 'README.md', 'README.zh-CN.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
     'CHANGELOG.md', 'PRIVACY.md', 'SECURITY.md', 'CONTRIBUTING.md', 'settings.example.json',
     'Install.ps1', 'Uninstall.ps1', 'Start.ps1', 'Stop.ps1')
 foreach ($taskFile in $taskFiles) { Copy-Item -LiteralPath (Join-Path $taskRoot $taskFile) -Destination $taskStage }

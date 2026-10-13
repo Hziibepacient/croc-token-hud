@@ -338,6 +338,9 @@ namespace CodexTokenHud
         private string selectedTitle = "";
         private string pinnedId;
         private string manualBindingId = "";
+        internal string FollowOwner = "";
+        private bool activityFollowing;
+        private bool startupChanging;
         private string previousSelection = "";
         private string rateText = "--";
         private string modelText = "等待对话";
@@ -476,6 +479,7 @@ namespace CodexTokenHud
         private void Tick(object sender, EventArgs e)
         {
             if (stopping) return;
+            if (ConsumeAppCloseRequest()) return;
             data = Json.Read(Path.Combine(runtime, "metrics.json"));
             bool bindingChanged = SyncManualBinding();
             ConsumeShowRequest();
@@ -498,7 +502,7 @@ namespace CodexTokenHud
                 inspecting = true;
                 nextInspection = DateTime.UtcNow.AddMilliseconds(350);
                 var known = new HashSet<string>(Json.List(data, "threads").Select(t => Json.Text(t, "title")));
-                var preferred = view;
+                var preferred = activityFollowing ? null : view;
                 int generation = inspectionGeneration;
                 Task.Run(delegate { return Inspector.Find(preferred, known); }).ContinueWith(task => {
                     if (stopping || IsDisposed) return;
@@ -538,7 +542,8 @@ namespace CodexTokenHud
                     {"window", view == null ? 0L : view.Handle.ToInt64()}, {"title", selectedTitle},
                     {"thread_id", Json.Text(data, "thread_id")}, {"rate_text", rateText},
                     {"model_text", modelText}, {"cache_text", cacheText}, {"weekly_text", weeklyText},
-                    {"binding_mode", string.IsNullOrEmpty(manualBindingId) ? "auto" : "manual"},
+                    {"binding_mode", string.IsNullOrEmpty(manualBindingId) ? (activityFollowing ? "activity" : "auto") : "manual"},
+                    {"follow_owner", FollowOwner}, {"updated_at_ms", EpochMs()},
                     {"awaiting_view", AwaitingView},
                     {"layout_mode", manualLayout ? "manual" : "auto"},
                     {"freshness", freshnessText}, {"sample_age_ms", sampleAgeMs}, {"collector_age_ms", collectorAgeMs},
@@ -579,6 +584,15 @@ namespace CodexTokenHud
             return bindingChanged;
         }
 
+        private bool ConsumeAppCloseRequest()
+        {
+            var request = Json.Read(Path.Combine(runtime, "app-close.request.json"));
+            if (string.IsNullOrEmpty(FollowOwner) || Json.Text(request, "owner") != FollowOwner) return false;
+            File.Delete(Path.Combine(runtime, "app-close.request.json"));
+            Close();
+            return true;
+        }
+
         private void Unpin()
         {
             Json.Write(Path.Combine(runtime, "manual-binding.json"), new Dictionary<string, object>());
@@ -590,19 +604,29 @@ namespace CodexTokenHud
         private void UpdateView(ViewSnapshot snapshot)
         {
             var manual = Json.Read(Path.Combine(runtime, "manual-binding.json"));
+            activityFollowing = false;
             if (!string.IsNullOrEmpty(manualBindingId))
                 snapshot = new ViewSnapshot { Handle = Native.GetDesktopWindow(), Primary = true, Title = Json.Text(manual, "title") };
+            else if ((!string.IsNullOrEmpty(FollowOwner) || IsStartupEnabled()) &&
+                (snapshot == null || (Native.ProcessId(Native.GetForegroundWindow()) != snapshot.ProcessId &&
+                 Native.ProcessId(Native.GetForegroundWindow()) != (uint)Process.GetCurrentProcess().Id && !menu.Visible)))
+            {
+                activityFollowing = true;
+                waitingForAutoFocus = false;
+                snapshot = new ViewSnapshot { Handle = Native.GetDesktopWindow(), Primary = true,
+                    Title = Json.Text(data, "binding_mode") == "activity" ? Json.Text(data, "title") : "" };
+            }
             view = snapshot;
             string title = snapshot == null ? "" : snapshot.Title ?? "";
             if (title != selectedTitle) pinnedId = null;
             selectedTitle = title;
             string id = string.IsNullOrEmpty(manualBindingId) ? pinnedId : manualBindingId;
-            string key = title + "\n" + id;
+            string key = title + "\n" + id + "\n" + activityFollowing;
             if (key == previousSelection) return;
             previousSelection = key;
             Json.Write(Path.Combine(runtime, "selection.json"), new Dictionary<string, object> {
                 {"title", title}, {"thread_id", id}, {"refresh_id", refreshId},
-                {"binding_mode", string.IsNullOrEmpty(manualBindingId) ? "auto" : "manual"},
+                {"binding_mode", string.IsNullOrEmpty(manualBindingId) ? (activityFollowing ? "activity" : "auto") : "manual"},
                 {"window", snapshot == null ? 0L : snapshot.Handle.ToInt64()}});
         }
 
@@ -671,7 +695,7 @@ namespace CodexTokenHud
             // Focus checks below hide automatic mode elsewhere; keep the independent HUD above the focused Codex window.
             TopMost = true;
             IntPtr foreground = Native.GetForegroundWindow();
-            bool codexFocused = !string.IsNullOrEmpty(manualBindingId) || Native.ProcessId(foreground) == view.ProcessId ||
+            bool codexFocused = activityFollowing || !string.IsNullOrEmpty(manualBindingId) || Native.ProcessId(foreground) == view.ProcessId ||
                 Native.ProcessId(foreground) == (uint)Process.GetCurrentProcess().Id || menu.Visible;
             Native.Rect client;
             Native.Point origin = new Native.Point();
@@ -731,6 +755,7 @@ namespace CodexTokenHud
                 freshnessText = "自动跟随 · 可右键固定";
             }
             if (!string.IsNullOrEmpty(manualBindingId)) freshnessText = "固定 · " + freshnessText;
+            else if (activityFollowing) freshnessText = "最新活动 · " + freshnessText;
             if (refreshRequestedAt != DateTime.MinValue)
             {
                 var ack = Json.Object(data, "refresh");
@@ -759,7 +784,7 @@ namespace CodexTokenHud
             weeklyText = "本对话周额度 暂无数据";
             var help = new StringBuilder();
             help.AppendLine("当前对话：" + (string.IsNullOrEmpty(selectedTitle) ? "未识别" : selectedTitle));
-            help.AppendLine("绑定方式：" + (string.IsNullOrEmpty(manualBindingId) ? "自动跟随桌面对话" : "按 ID 固定对话；右键可解除固定"));
+            help.AppendLine("绑定方式：" + (string.IsNullOrEmpty(manualBindingId) ? (activityFollowing ? "最新活动日志；不代表前台 CLI/IDE 对话" : "自动跟随桌面对话") : "按 ID 固定对话；右键可解除固定"));
             help.AppendLine("模型：" + modelText);
             help.AppendLine("速率：最近一次模型响应的真实输出 token / 生成秒数。");
             help.AppendLine("每 0.1 秒检查新统计，界面每 0.15 秒刷新；实际计数在模型响应完成后到达。");
@@ -789,7 +814,7 @@ namespace CodexTokenHud
             help.AppendLine("采集心跳：" + TimeLabel(Json.Number(data, "updated_at_ms")));
             help.AppendLine("本对话周额度：当前服务未提供按对话归属的周额度扣减值，无法精确统计。");
             help.AppendLine("按住条内区域拖动；拖动边缘或右下角调整大小。位置和尺寸自动保存。");
-            help.AppendLine("右键可立即刷新数据、恢复底部默认位置、选择同名对话、设置开机启动或退出。");
+            help.AppendLine("右键可立即刷新数据、恢复底部默认位置、选择同名对话、设置随应用启动或退出。");
             helpText = help.ToString();
             if (tooltip.GetToolTip(this) != helpText) tooltip.SetToolTip(this, helpText);
         }
@@ -897,64 +922,16 @@ namespace CodexTokenHud
             Json.Write(LayoutPath, new Dictionary<string, object> {{"mode", "auto"}});
             PositionHud();
         }
-        private string StartupTaskName { get { return "CodexTokenHud-" + Environment.UserName; } }
-
         private bool IsStartupEnabled()
         {
-            try
-            {
-                dynamic service = Activator.CreateInstance(Type.GetTypeFromProgID("Schedule.Service"));
-                service.Connect();
-                dynamic root = service.GetFolder("\\");
-                dynamic task = root.GetTask(StartupTaskName);
-                bool enabled = task.Enabled && string.Equals((string)task.Definition.Actions[1].Path,
-                    Application.ExecutablePath, StringComparison.OrdinalIgnoreCase);
-                Marshal.FinalReleaseComObject(task); Marshal.FinalReleaseComObject(root); Marshal.FinalReleaseComObject(service);
-                return enabled;
-            }
-            catch { return false; }
+            var saved = Json.Read(Path.Combine(configuration.DataDirectory, "app-follow", "config.json"));
+            return Json.Text(saved, "enabled").Equals("True", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(Json.Text(saved, "installation"), Application.ExecutablePath, StringComparison.OrdinalIgnoreCase);
         }
 
         private void SetStartup(bool enabled)
         {
-            dynamic service = Activator.CreateInstance(Type.GetTypeFromProgID("Schedule.Service"));
-            service.Connect();
-            dynamic root = service.GetFolder("\\");
-            dynamic existing = null;
-            try { existing = root.GetTask(StartupTaskName); }
-            catch (COMException error) { if (error.ErrorCode != unchecked((int)0x80070002)) throw; }
-            if (existing != null)
-            {
-                string path = (string)existing.Definition.Actions[1].Path;
-                Marshal.FinalReleaseComObject(existing);
-                if (!string.Equals(path, Application.ExecutablePath, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("同名启动任务指向另一个副本；请先在原副本中关闭自动启动。");
-            }
-            if (!enabled) root.DeleteTask(StartupTaskName, 0);
-            else
-            {
-                string user = System.Security.Principal.WindowsIdentity.GetCurrent().Name;
-                dynamic definition = service.NewTask(0);
-                definition.RegistrationInfo.Description = "Codex 当前对话 token 速率和缓存命中率状态条";
-                definition.Principal.UserId = user;
-                definition.Principal.LogonType = 3; // Only run in this user's interactive session.
-                definition.Principal.RunLevel = 1; // Match an elevated Codex window's UI Automation access.
-                definition.Settings.ExecutionTimeLimit = "PT0S";
-                definition.Settings.MultipleInstances = 2;
-                definition.Settings.DisallowStartIfOnBatteries = false;
-                definition.Settings.StopIfGoingOnBatteries = false;
-                definition.Settings.StartWhenAvailable = true;
-                dynamic trigger = definition.Triggers.Create(9);
-                trigger.UserId = user;
-                trigger.Delay = "PT10S";
-                dynamic action = definition.Actions.Create(0);
-                action.Path = Application.ExecutablePath;
-                action.WorkingDirectory = folder;
-                dynamic task = root.RegisterTaskDefinition(StartupTaskName, definition, 6, user, null, 3, null);
-                Marshal.FinalReleaseComObject(task); Marshal.FinalReleaseComObject(action);
-                Marshal.FinalReleaseComObject(trigger); Marshal.FinalReleaseComObject(definition);
-            }
-            Marshal.FinalReleaseComObject(root); Marshal.FinalReleaseComObject(service);
+            configuration.ConfigureAppFollowing(enabled);
         }
         private void BuildMenu()
         {
@@ -987,11 +964,18 @@ namespace CodexTokenHud
                     Json.Write(Path.Combine(runtime, "range-result.json"), new Dictionary<string, object>());
                 };
             menu.Items.Add("恢复底部默认位置和大小").Click += delegate { ResetLayout(); };
-            var startup = menu.Items.Add("开机自动启动") as ToolStripMenuItem;
+            var startup = menu.Items.Add("随 Codex / CLI / IDE 启动") as ToolStripMenuItem;
             startup.Checked = IsStartupEnabled();
+            startup.Enabled = !startupChanging;
             startup.Click += delegate {
-                try { SetStartup(!IsStartupEnabled()); }
-                catch (Exception error) { MessageBox.Show("无法修改开机启动：" + error.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Information); }
+                bool enabled = !IsStartupEnabled();
+                startupChanging = true;
+                startup.Enabled = false;
+                Task.Run(delegate { SetStartup(enabled); }).ContinueWith(task => {
+                    startupChanging = false;
+                    if (task.IsFaulted && !IsDisposed)
+                        try { BeginInvoke(new Action(delegate { MessageBox.Show("无法修改随应用启动：" + task.Exception.GetBaseException().Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Information); })); } catch { }
+                });
             };
             var readme = menu.Items.Add("打开使用说明");
             readme.Click += delegate { Process.Start(Path.Combine(folder, "README.zh-CN.md")); };
@@ -1037,7 +1021,16 @@ namespace CodexTokenHud
             RuntimeConfiguration configuration;
             try
             {
+                int runtimeIndex = Array.IndexOf(args, "--runtime");
+                if (runtimeIndex >= 0 && runtimeIndex + 1 < args.Length)
+                {
+                    string requested = Path.GetFullPath(args[runtimeIndex + 1]);
+                    if (Path.GetFileName(requested) != "runtime") throw new ArgumentException("Windows HUD runtime must end with runtime.");
+                    Environment.SetEnvironmentVariable("CODEX_TOKEN_HUD_HOME", Path.GetDirectoryName(requested));
+                }
                 configuration = RuntimeConfiguration.Load(AppDomain.CurrentDomain.BaseDirectory);
+                int homeIndex = Array.IndexOf(args, "--codex-home");
+                if (homeIndex >= 0 && homeIndex + 1 < args.Length) configuration.CodexHome = Path.GetFullPath(args[homeIndex + 1]);
                 string pythonVersion = configuration.CheckPython();
                 if (args.Length == 2 && args[0] == "--check")
                 {
@@ -1048,11 +1041,23 @@ namespace CodexTokenHud
                     return 0;
                 }
                 configuration.PrepareData();
+                if (args.Contains("--enable-app-follow") || args.Contains("--disable-app-follow"))
+                {
+                    configuration.ConfigureAppFollowing(args.Contains("--enable-app-follow"));
+                    return 0;
+                }
+                if (args.Length == 0 && configuration.HasLegacyLogonStartup())
+                {
+                    configuration.ConfigureAppFollowing(true);
+                    return 0; // The replacement watcher decides whether a client is running.
+                }
             }
             catch (Exception error)
             {
                 if (args.Length == 2 && args[0] == "--check")
                     Json.Write(Path.GetFullPath(args[1]), new Dictionary<string, object> {{"ok", false}, {"error", error.Message}});
+                else if (args.Contains("--enable-app-follow") || args.Contains("--disable-app-follow"))
+                    Console.Error.WriteLine(error.Message);
                 else MessageBox.Show(error.Message, "Codex Token HUD", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return 1;
             }
@@ -1069,6 +1074,8 @@ namespace CodexTokenHud
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 var hud = new Hud(configuration);
+                int ownerIndex = Array.IndexOf(args, "--follow-owner");
+                if (ownerIndex >= 0 && ownerIndex + 1 < args.Length) hud.FollowOwner = args[ownerIndex + 1];
                 hud.StartMonitoring();
                 Application.Run();
                 singleton.ReleaseMutex();

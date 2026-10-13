@@ -1,5 +1,13 @@
 # Validation and limits
 
+## 1.3.0-beta.6 — application following
+
+On Windows x64 / Python 3.14.8 / Qt 6.10.3, the complete Python suite passed **75 checks**, including the Qt menu/owner-close regression. The final focused application-follow suite passed **21 checks**, including two subsequently added direct-launcher checks. Coverage includes idle/debounce, last-client grace, parallel clients, manual quit suppression, preserving manually launched windows, recovery during an automatic close, exclusive watcher ownership, executable classification/exact custom paths, safe failed registration, headless operation without Qt, latest-log ties, stale exited-process status, argument/exit-code passthrough, shared launcher locks and a real watcher→dashboard→owned-close round trip. Synthetic logs and short fixture timers are used for lifecycle integration; no real chat contents are captured.
+
+All **30 native Windows binding checks passed**, including CLI/IDE activity display without a Desktop window, explicit labeling, pin precedence, the replacement menu, wrong-owner rejection and owned shutdown. OS task registration and other-platform CI results are recorded after execution below. Existing metric formulas are unchanged. Real WSL/SSH hosts, macOS LaunchAgent/systemd login cycles and every IDE are not locally available; source paths and CI evidence must not be described as those clients' end-to-end acceptance.
+
+A uniquely named temporary Windows scheduled task completed actual migration from this copy's EXE action to its watcher action, owner/config-path verification, removal and repeated removal. The fixture task was removed; no unrelated startup tasks were modified.
+
 ## 1.3.0-beta.5 — native macOS/Linux overlay
 
 On Windows x64 / Python 3.14.8 / Qt 6.10.3, the final complete Python regression suite passed **55 tests**, including 21 overlay checks. The overlay checks cover latest-activity selection, exact pin/unpin, missing logs, tied timestamps, external range/binding changes, force reread, model/turn/age guards, window recovery, unavailable trays, saved layout, exact-ID search, repeat-launch IPC, range display and minimum layout. The test harness explicitly flushes Qt deferred deletion between own-window fixtures; it does not automate Codex.

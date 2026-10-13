@@ -62,6 +62,21 @@ class OverlayGuiTests(unittest.TestCase):
         self.hud.update_menu()
         self.assertFalse(self.hud.show_action.isEnabled())
 
+    def test_application_follow_menu_and_owned_close_request(self):
+        from metrics import atomic_json
+        self.hud.update_menu()
+        self.assertTrue(self.hud.startup_action.isCheckable())
+        self.hud.follow_owner = 'fixture-owner'
+        request = self.hud.runtime / 'app-close.request.json'
+        with patch.object(self.app, 'quit') as quit_app:
+            atomic_json(request, {'owner': 'other'})
+            self.hud.write_status()
+            quit_app.assert_not_called()
+            atomic_json(request, {'owner': 'fixture-owner'})
+            self.hud.write_status()
+            quit_app.assert_called_once()
+        self.assertFalse(request.exists())
+
     def test_hidden_and_minimized_restore_without_reset(self):
         self.hud.hide()
         self.hud.update_menu()

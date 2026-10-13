@@ -132,6 +132,32 @@ class HudBindingTests
                 Check(!hud.IsDisposed && Native.IsWindowVisible(hud.Handle) && Native.IsTopmost(hud.Handle),
                     "loss of the followed window returns to native visible waiting instead of exiting");
             }
+            hud.FollowOwner = "fixture-owner";
+            typeof(Hud).GetField("data", Private).SetValue(hud, new Dictionary<string, object> {
+                {"title", "Latest fixture"}, {"thread_id", "latest-id"}, {"binding", "ok"}, {"binding_mode", "activity"},
+                {"updated_at_ms", now}, {"source", new Dictionary<string, object> {{"state", "ok"}}},
+                {"metrics", new Dictionary<string, object> {{"model", "fixture-model"}, {"stage", "idle"},
+                    {"last", new Dictionary<string, object> {{"model", "fixture-model"}, {"measured_at_ms", now}, {"rate", 30.0}, {"cache_percent", 80.0}}}}} });
+            Call(hud, "UpdateView", new object[] { null });
+            Call(hud, "UpdateMetrics");
+            Call(hud, "PositionHud");
+            Check(Json.Text(Json.Read(Path.Combine(config.Runtime, "selection.json")), "binding_mode") == "activity" &&
+                Native.IsWindowVisible(hud.Handle) && (string)Field(hud, "rateText") == "30.0",
+                "application-follow mode displays CLI/IDE latest activity without a desktop window");
+            Check(((string)Field(hud, "freshnessText")).StartsWith("最新活动"), "activity following is labeled rather than claimed as foreground chat");
+            Check(Item(hud, "随 Codex / CLI / IDE 启动") != null && Item(hud, "开机自动启动") == null,
+                "application-follow option replaces logon HUD startup");
+            Json.Write(Path.Combine(config.Runtime, "manual-binding.json"), new Dictionary<string, object> {{"thread_id", "manual-id"}, {"title", "Manual fixture"}});
+            Call(hud, "SyncManualBinding");
+            Check(Json.Text(Json.Read(Path.Combine(config.Runtime, "selection.json")), "binding_mode") == "manual",
+                "explicit pin wins over latest-activity following");
+            Json.Write(Path.Combine(config.Runtime, "app-close.request.json"), new Dictionary<string, object> {{"owner", "other"}});
+            Check(!(bool)Call(hud, "ConsumeAppCloseRequest") && !hud.IsDisposed,
+                "another watcher cannot close this HUD");
+            Json.Write(Path.Combine(config.Runtime, "app-close.request.json"), new Dictionary<string, object> {{"owner", "fixture-owner"}});
+            IntPtr closingHandle = hud.Handle;
+            Check((bool)Call(hud, "ConsumeAppCloseRequest") && !Native.IsWindowVisible(closingHandle),
+                "own watcher closes its HUD when the final client exits");
             Console.WriteLine("Binding checks passed: " + checks);
             return 0;
         }

@@ -449,6 +449,12 @@ def monitor(codex_home: Path, runtime: Path, parent_pid: int | None = None, once
             selection_key = key
             matched_at = time.monotonic()
         selected = next((r for r in matches if r["id"] == selected_id), None)
+        if selection.get("binding_mode") == "activity":
+            rows = list(catalog.rows.values())
+            newest = max((r["updated_at_ms"] for r in rows), default=None)
+            matches = [r for r in rows if r["updated_at_ms"] == newest]
+            selected = matches[0] if len(matches) == 1 else None
+            title = selected["title"] if selected else ""
         if selection.get("binding_mode") == "manual" and selected_id:
             selected = catalog.rows.get(selected_id)
         if selected is None and len(matches) == 1 and selection.get("binding_mode") != "manual":
@@ -465,7 +471,8 @@ def monitor(codex_home: Path, runtime: Path, parent_pid: int | None = None, once
         range_result = saved_range if selected and saved_range.get("thread_id") == selected["id"] else None
         result = {"schema_version": 2, "collector_pid": os.getpid(),
                   "repository_state": repository.state,
-                  "binding": status, "thread_id": selected["id"] if selected else None,
+                  "binding": status, "binding_mode": selection.get("binding_mode", "auto"),
+                  "thread_id": selected["id"] if selected else None,
                   "title": title, "metrics": metrics, "source": tail.source() if tail else None,
                   "refresh": refresh_result, "range": range_result,
                   "matches": [{k: r.get(k) for k in ("id", "title", "model", "updated_at")} for r in matches],

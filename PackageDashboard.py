@@ -8,7 +8,7 @@ def main():
     version = (root / "VERSION").read_text().strip()
     output = root / "dist" / ("CodexTokenHud-" + version + "-dashboard.zip")
     output.parent.mkdir(exist_ok=True)
-    files = ["metrics.py", "history.py", "dashboard.py", "stats.py", "VERSION", "LICENSE", "README.md",
+    files = ["metrics.py", "history.py", "dashboard.py", "stats.py", "app_follow.py", "VERSION", "LICENSE", "README.md",
              "README.zh-CN.md", "PRIVACY.md", "SECURITY.md", "CHANGELOG.md", "StartDashboard.ps1", "start-dashboard.sh",
              "overlay.py", "overlay_state.py", "requirements-overlay.txt", "start-overlay.sh", "StartOverlay.command", "THIRD_PARTY.md"]
     files.extend(str(p.relative_to(root)) for p in (root / "web").glob("*.*"))

@@ -1,10 +1,8 @@
 $ErrorActionPreference = 'Stop'
 $taskExe = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'CodexTokenHud.exe'))
-$taskName = 'CodexTokenHud-' + $env:USERNAME
-$taskExisting = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-if ($taskExisting -and $taskExisting.Actions.Execute -eq $taskExe) {
-    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+if (Test-Path -LiteralPath $taskExe) {
+    $taskSetup = Start-Process -FilePath $taskExe -ArgumentList '--disable-app-follow' -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -Wait -PassThru
+    if ($taskSetup.ExitCode -ne 0) { throw '无法关闭本副本的随应用启动，未移除其他副本的设置。' }
 }
 & (Join-Path $PSScriptRoot 'Stop.ps1')
 $taskLinkPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Codex Token 状态条.lnk'

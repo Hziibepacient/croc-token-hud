@@ -24,6 +24,18 @@ def main():
     with tempfile.TemporaryDirectory(prefix="HUD native smoke 测试 ") as directory:
         root = Path(directory)
         runtime = root / "runtime"
+        if args.manifest:
+            # The bundled watcher must dispatch before Qt is imported and must
+            # not create the HUD/server on an idle CI machine.
+            config = root / "watcher/config.json"
+            config.parent.mkdir()
+            config.write_text(json.dumps({"enabled": True, "command": program,
+                                         "runtime": str(runtime), "codex_home": str(root)}), encoding="utf-8")
+            result = subprocess.run(program + ["--watch-apps", "--config", str(config), "--duration", "0.5"],
+                                    capture_output=True, timeout=75)
+            assert result.returncode == 0, (result.stdout, result.stderr)
+            assert not (runtime / "startup.json").exists(), "Idle watcher unexpectedly initialized a HUD"
+            assert not (runtime / "dashboard.json").exists(), "Idle watcher unexpectedly initialized statistics"
         path = root / "synthetic.jsonl"
         start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=10)
         def event(seconds, kind, payload):

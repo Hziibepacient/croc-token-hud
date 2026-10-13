@@ -1,4 +1,8 @@
-# Codex Token HUD 1.3.0-beta.5
+# Codex Token HUD 1.3.0-beta.6
+
+Application following replaces direct logon HUD startup across supported environments. A small watcher waits for Desktop/CLI/IDE Codex processes, then starts the HUD and statistics service; after the final client closes it exits only its own HUD. Manually launched windows are preserved, and manual quit suppresses repeated launches during the current client session. Windows migrates the old task and labels non-Desktop statistics as latest activity; manual pinning remains authoritative.
+
+macOS/Linux expose the same menu option. WSL/SSH detection runs on the log host, with a dependency-free loopback dashboard and user systemd service on headless Linux. Exact custom executable paths and `app_follow.py --run CLIENT [ARGS...]` cover additional/renamed compatible clients and hosts without an autostart manager. Offline logs retain manual viewing; no cross-host process visibility or new log-format compatibility is claimed. See README and COMPATIBILITY.md for setup and privacy details.
 
 Native macOS/Linux floating HUDs now show output speed, input cache fraction, model and sample time. The strip moves/resizes, saves layout, stays visible across normal applications where the desktop honors topmost requests, and restores the same instance on relaunch. Choose and pin a conversation by exact ID, or explicitly follow the latest recorded activity. This is distinct from the original Windows foreground-conversation detector. Browser range results and pin/unpin changes synchronize with the matching strip.
 

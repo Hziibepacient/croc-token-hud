@@ -4,7 +4,33 @@
 
 本地 Codex token 统计工具：Windows/macOS/Linux 桌面悬浮状态栏，以及浏览器面板和命令行报告。
 
-**当前源码版本：1.3.0-beta.5。** 独立开源项目，与 OpenAI 无隶属关系。只读本地日志，不改动 Codex 安装，不上传聊天内容。
+## 随所有兼容客户端启动
+
+Windows 右键勾选 **“随 Codex / CLI / IDE 启动”**，或运行 `Install.ps1`。macOS/Linux 悬浮条菜单使用 **“随受支持客户端启动”**。原来的“开机自动启动”已替换；本副本的旧 Windows 自启任务会迁移。
+
+登录后只运行后台等待器，未检测到客户端时不打开状态条、采集器或统计服务。客户端出现后约 2 秒启动；最后一个客户端关闭后约 6–8 秒退出由等待器启动的状态条。手动打开的窗口保留；手动退出后，本轮客户端全部关闭并再次打开才恢复自动启动。
+
+识别范围按共享 Codex 后端划分，涵盖 Desktop、CLI，以及 VS Code、Cursor、Windsurf 等运行兼容 Codex 后端的 IDE/派生入口；不会只因打开编辑器或终端就启动。Windows 桌面前台时跟随其对话，其他场景明确标注“最新活动”，也可按 ID 固定，避免误认并行对话。
+
+WSL、SSH 和其他主机须在**日志所在环境**启用跟随；宿主机不能直接识别远端的进程。无图形界面时自动使用无 Qt 依赖的本地统计服务，仍只监听回环地址。源码入口覆盖原有 Python 兼容范围：
+
+```sh
+# 有桌面时启用悬浮条；无桌面时使用本地面板和 systemd 用户服务
+python3 app_follow.py --enable
+# 强制使用浏览器统计服务；SSH 可配合原有端口转发
+python3 app_follow.py --enable --interface dashboard
+# 改名或额外的兼容客户端：按完整可执行文件路径识别，可重复指定
+python3 app_follow.py --enable --client-executable /absolute/path/to/client
+# 没有桌面自启或 systemd 用户服务的环境：通过此入口启动任意兼容客户端
+python3 app_follow.py --run codex
+python3 app_follow.py --interface dashboard --run /absolute/path/to/client arg1 arg2
+# 关闭跟随，保留手动工具和已有数据
+python3 app_follow.py --disable
+```
+
+`--run` 后的程序和参数原样传递，不修改 Codex、编辑器或 shell 配置。它和 `--client-executable` 为新增/改名客户端提供入口，但不会把不兼容的日志变成兼容格式。离线日志、历史导出和纯云端任务没有可跟随的本地客户端进程；离线兼容日志继续手动查看，纯云端记录仍不可测。
+
+**当前源码版本：1.3.0-beta.6。** 独立开源项目，与 OpenAI 无隶属关系。只读本地日志，不改动 Codex 安装，不上传聊天内容。
 
 ![Windows 状态栏](docs/images/hud.png)
 
@@ -14,7 +40,7 @@
 
 截图来自 macOS ARM64 CI，使用人工统计数据；Linux 使用同一布局及自己的原生窗口后端。
 
-在 [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.5) 下载对应的 `overlay-macos-x64`、`overlay-macos-arm64`、`overlay-linux-x64` 或 `overlay-linux-arm64` 安装包并完整解压；开发产物也可在 [GitHub Actions 成功运行](https://github.com/drkang7/codex-token-hud/actions)中获取。macOS 将 **CodexTokenHud.app** 移到“应用程序”后打开；Linux 运行 `./CodexTokenHud/CodexTokenHud`。这些包内置 Python 和 Qt，无需自己安装依赖。macOS 测试包使用临时签名、尚未公证，遇到系统拦截可通过系统设置中的“仍要打开”启动。
+在 [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.6) 下载对应的 `overlay-macos-x64`、`overlay-macos-arm64`、`overlay-linux-x64` 或 `overlay-linux-arm64` 安装包并完整解压；开发产物也可在 [GitHub Actions 成功运行](https://github.com/drkang7/codex-token-hud/actions)中获取。macOS 将 **CodexTokenHud.app** 移到“应用程序”后打开；Linux 运行 `./CodexTokenHud/CodexTokenHud`。这些包内置 Python 和 Qt，无需自己安装依赖。macOS 测试包使用临时签名、尚未公证，遇到系统拦截可通过系统设置中的“仍要打开”启动。
 
 悬浮条显示 **tok/s、缓存命中率、模型和统计时间**。拖动空白处移动，拖动边角或右下角调整大小，布局自动保存。“选对话”可搜索标题或完整 ID 并固定；右键解除固定后，按日志最近记录的活动跟随，并明确显示“最新活动”。后台对话也可能成为最新活动，因此它不等同于正在查看的窗口；多个对话时间相同会要求手动选择。浏览器面板里的固定/解除固定、区间确认和返回最近响应会同步到悬浮条。
 
@@ -105,7 +131,7 @@ python3 dashboard.py --no-browser --port 8765
 
 **“立即刷新数据”会重新扫描本地日志、查找新的续聊片段并重读最新文件。** 状态栏显示“正在重新读取日志”“已刷新 · 无新计数”或具体失败状态。刷新不能让 Codex 提前产生尚未写入的 token 计数。采集器不响应时会自动重连。
 
-可选开机启动：托盘菜单，或以管理员 PowerShell 运行 `Install.ps1`。`Uninstall.ps1` 仅删除本副本创建的任务与快捷方式，保留布局。退出状态栏会同时停止它的采集器和统计服务。
+随应用启动：右键菜单，或以管理员 PowerShell 运行 `Install.ps1`。`Uninstall.ps1` 仅删除本副本创建的等待器注册与快捷方式，保留布局。退出状态栏会同时停止它的采集器和统计服务。
 
 ## 实时数据含义
 

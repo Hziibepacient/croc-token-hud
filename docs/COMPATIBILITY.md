@@ -1,5 +1,15 @@
 # Compatibility / 兼容范围
 
+## Application-follow lifecycle
+
+All interfaces that can consume compatible local Codex logs have a follow entry: native Windows/macOS/Linux strips, headless/browser service, and the generic source launcher on other compatible Python hosts. Default detection covers the official native `codex`/`codex.exe` backend shared by CLI and IDE integrations, the Mac Codex bundle and the Windows OpenAI.Codex package. Only same-user/session executable paths are inspected, with no process arguments. Extra exact executable paths can be registered using repeated `--client-executable`; `--run CLIENT [ARGS...]` follows an explicitly launched client even when its executable name is unknown or no process-enumeration API is available.
+
+The watcher is registered as a Windows interactive-user scheduled task, macOS user LaunchAgent, graphical Linux XDG autostart entry, or headless Linux systemd user service. Only the watcher starts after login. Detection never starts a WSL distribution, connects to an SSH host, or interprets a generic `ssh`/terminal/editor process as Codex. Install/launch it inside the environment containing the logs. A headless service stores its loopback URL in the private `follow-dashboard-runtime/dashboard.json`; forward the same port as described below. If no user autostart manager exists, use the direct launcher. Dependencies for each interface are unchanged.
+
+No client means no HUD/collector/server. Short-lived version probes do not open a HUD. Multiple clients share one HUD; a six-second exit grace handles backend restarts. Only the watcher's own instance accepts its owner close request. A manual HUD survives client exit; a manual quit suppresses repeated launch until clients have closed and reopened. Exact-ID pinning takes precedence over latest activity. New detection paths do not extend log-format compatibility, allow inaccessible cross-user/container processes, or add telemetry for cloud-only/offline tasks.
+
+The registration mechanisms follow [Apple user-agent guidance](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html) and the [XDG autostart specification](https://specifications.freedesktop.org/autostart/latest/). Source portability, process visibility, OS registration and actual client acceptance are separate validation boundaries.
+
 The shared collector, range analysis, local web service and terminal reports use only Python 3.10+ standard-library modules. They do not depend on Electron internals, a window title, an OS UI toolkit, a CPU architecture, pip packages or an account API.
 
 | Environment | Interface | Requirements / validation boundary |

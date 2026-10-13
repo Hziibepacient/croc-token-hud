@@ -45,7 +45,8 @@ class Dashboard:
         self.lock = threading.RLock()
 
     def native_info(self):
-        return {"native_available": self.native_enabled, "native_follow_mode": self.native_follow_mode,
+        mode = "activity" if read_selection(self.runtime / "selection.json").get("binding_mode") == "activity" else self.native_follow_mode
+        return {"native_available": self.native_enabled, "native_follow_mode": mode,
                 "native_label": self.native_label,
                 "pinned_thread_id": read_selection(self.runtime / "manual-binding.json").get("thread_id")
                 if self.native_enabled else None}
@@ -223,6 +224,7 @@ def main():
     parser.add_argument("--port", type=int, default=0, help="Local port (default: choose an available port)")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--thread", default="")
+    parser.add_argument("--follow-owner", default="", help=argparse.SUPPRESS)
     args = parser.parse_args()
     server = start_server(args.codex_home, args.runtime, args.log, args.port)
     url = server.url(args.thread)
@@ -231,8 +233,17 @@ def main():
         webbrowser.open(url)
     try:
         while True:
+            if args.follow_owner:
+                request = read_selection(args.runtime / "app-close.request.json")
+                if request.get("owner") == args.follow_owner:
+                    (args.runtime / "app-close.request.json").unlink(missing_ok=True)
+                    break
+                atomic_json(args.runtime / "status.json", {"pid": os.getpid(), "follow_owner": args.follow_owner,
+                            "interface": "dashboard", "updated_at_ms": time.time() * 1000})
             time.sleep(0.5)
     except KeyboardInterrupt:
+        pass
+    finally:
         server.shutdown()
         server.server_close()
 

@@ -8,6 +8,7 @@ import hashlib
 import os
 from pathlib import Path
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -15,6 +16,14 @@ import webbrowser
 
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from app_follow import configure as configure_following, enabled as following_enabled, overlay_command
+
+# A frozen native package can wait for clients without loading Qt or opening a
+# window. This dispatch must precede the optional GUI imports.
+if __name__ == "__main__" and "--watch-apps" in sys.argv:
+    from app_follow import main as follow_main
+    raise SystemExit(follow_main())
 
 # XWayland supplies positioning/stacking that ordinary Wayland clients cannot
 # request. Respect an explicit backend, and keep native Wayland usable otherwise.
@@ -276,12 +285,17 @@ class ResizeGrip(QSizeGrip):
 
 
 class Hud(QWidget):
+    following_configured = Signal(object)
+
     def __init__(self, server, language="auto", start_worker=True, tray=True):
         super().__init__()
         self.server = server
         self.runtime = server.service.runtime
         self.zh = language == "zh" or language == "auto" and QLocale.system().name().startswith("zh")
         self.snapshot = {}
+        self.follow_owner = ""
+        self.following_pending = False
+        self.following_configured.connect(self.following_finished)
         self.received = 0.0
         self.request_id = 0
         self.pending_id = None
@@ -409,6 +423,9 @@ class Hud(QWidget):
         self.menu.addAction(self.top_action)
         self.menu.addAction(self.tr("重置位置与大小", "Reset position and size"), self.reset_layout)
         self.hide_action = self.menu.addAction(self.tr("隐藏悬浮条", "Hide HUD"), self.hide_hud)
+        self.startup_action = QAction(self.tr("随受支持客户端启动", "Start with supported clients"), self, checkable=True)
+        self.startup_action.triggered.connect(self.configure_following)
+        self.menu.addAction(self.startup_action)
         self.menu.addSeparator()
         self.menu.addAction(self.tr("退出工具", "Quit"), QApplication.instance().quit)
 
@@ -417,6 +434,25 @@ class Hud(QWidget):
         self.hide_action.setEnabled(self.tray.isVisible() and QSystemTrayIcon.isSystemTrayAvailable())
         self.follow_action.setEnabled(bool(self.snapshot.get("pinned_thread_id")))
         self.refresh_action.setEnabled(self.pending_id is None)
+        self.startup_action.setChecked(following_enabled())
+        self.startup_action.setEnabled(not self.following_pending)
+
+    def configure_following(self, checked):
+        self.following_pending = True
+        def change():
+            try:
+                configure_following(overlay_command(), self.runtime, self.server.service.catalog.home, checked)
+                result = ""
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                result = str(error)
+            self.following_configured.emit(result)
+        threading.Thread(target=change, name="hud-app-follow-setup", daemon=True).start()
+
+    def following_finished(self, error):
+        self.following_pending = False
+        self.feedback = self.tr("设置失败：", "Setup failed: ") + error if error else self.tr("随应用启动设置已更新", "Application-follow setting updated")
+        self.feedback_until = time.monotonic() + 10
+        self.render()
 
     def request(self, name, thread_id=None):
         self.request_id += 1
@@ -648,12 +684,18 @@ class Hud(QWidget):
 
     def write_status(self):
         try:
+            close_request = read_selection(self.runtime / "app-close.request.json")
+            if self.follow_owner and close_request.get("owner") == self.follow_owner:
+                (self.runtime / "app-close.request.json").unlink(missing_ok=True)
+                QApplication.instance().quit()
+                return
             native = mac_window_state(self)
             atomic_json(self.runtime / "status.json", {"pid": os.getpid(), "visible": self.isVisible(),
                         "minimized": self.isMinimized(), "topmost_requested": bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint),
                         "platform": QApplication.platformName(), "window_id": int(self.winId()),
                         "thread_id": (self.snapshot.get("thread") or {}).get("id"),
                         "pinned_thread_id": self.snapshot.get("pinned_thread_id"), "updated_at_ms": time.time() * 1000,
+                        "follow_owner": self.follow_owner,
                         "rate": self.rate_label.text(), "cache": self.cache_label.text(), "native": native,
                         "native_error": self.native_error})
         except (OSError, ValueError, AttributeError) as error:
@@ -676,6 +718,7 @@ def main():
     parser.add_argument("--log", type=Path, action="append", default=[])
     parser.add_argument("--thread", default="", help="Pin an exact local conversation ID on launch")
     parser.add_argument("--language", choices=("auto", "zh", "en"), default="auto")
+    parser.add_argument("--follow-owner", default="", help=argparse.SUPPRESS)
     parser.add_argument("--quit-after", type=float, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--no-tray", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -701,6 +744,7 @@ def main():
             atomic_json(args.runtime / "manual-binding.json", {"thread_id": args.thread})
     startup("creating-hud")
     hud = Hud(server, args.language, tray=not args.no_tray)
+    hud.follow_owner = args.follow_owner
     instance.show_requested.connect(hud.show_hud)
     app.applicationStateChanged.connect(lambda state: hud.show_hud() if state == Qt.ApplicationState.ApplicationActive and not hud.isVisible() else None)
     app.aboutToQuit.connect(hud.shutdown)

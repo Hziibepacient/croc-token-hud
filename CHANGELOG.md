@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0-beta.6 — 2026-10-13
+
+Replaced direct logon HUD startup with application following. A small user-session watcher waits for Codex Desktop or a native Codex backend used by CLI/IDE clients; the HUD and collector start only after a client appears. After the final client closes, the watcher asks only its own HUD to exit. Manually opened windows are preserved, and manually exiting suppresses relaunch until the current clients have closed. Windows migrates this copy's legacy task and uses explicit latest-activity binding outside its foreground Desktop window; manual pinning remains authoritative.
+
+Windows, macOS and Linux provide the same follow option. User LaunchAgents/XDG autostart or a headless systemd user service keep only the watcher available after login. WSL/SSH follow clients on the log host, with a dependency-free local dashboard on headless hosts. Exact custom executable paths and a generic `--run CLIENT [ARGS...]` launcher cover renamed or additional compatible clients and environments without an autostart manager. Process arguments, credentials and message bodies are not read by detection. Offline logs remain manually viewable.
+
 ## 1.3.0-beta.5 — 2026-10-10
 
 Added a native Qt desktop HUD for macOS and Linux, with ready-to-run Intel/Apple Silicon and Linux x64/ARM64 build jobs. The strip stays above normal windows where supported, moves/resizes, saves its layout, restores after repeat launch, and offers tray/menu actions with a safe fallback when no tray exists. macOS panels remain visible when inactive and join Spaces with the full-screen auxiliary flag. XWayland is preferred when available; native Wayland retains system drag/resize, with compositor-specific stacking/placement limits.
