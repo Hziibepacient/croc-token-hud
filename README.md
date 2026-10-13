@@ -23,7 +23,7 @@ python3 app_follow.py --disable
 
 Local Codex output speed and input cache statistics, with floating desktop HUDs for Windows/macOS/Linux, a portable browser dashboard, and terminal reports.
 
-**Source version: 1.3.0-beta.6.** Independent project, unaffiliated with OpenAI. Reads local logs without changing Codex or uploading conversations.
+**Source version: 1.3.0-beta.7.** Independent project, unaffiliated with OpenAI. Reads local logs without changing Codex or uploading conversations.
 
 ![Windows HUD](docs/images/hud.png)
 
@@ -54,7 +54,7 @@ Confirmed results are fixed snapshots. Confirm again to update, or use **返回�
 
 Screenshot uses artificial data in macOS ARM64 CI. Linux uses the same layout with its native window backend.
 
-Download the matching `overlay-macos-x64`, `overlay-macos-arm64`, `overlay-linux-x64` or `overlay-linux-arm64` package from [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.6). Development artifacts are also available from [successful CI runs](https://github.com/drkang7/codex-token-hud/actions). Extract the ZIP/tar.gz completely. On macOS, move **CodexTokenHud.app** to Applications and open it. On Linux, run `./CodexTokenHud/CodexTokenHud`. These packages include Python and Qt; no pip installation is required. The macOS beta is ad-hoc signed, not notarized; use the system's Open Anyway option if blocked.
+Download the matching `overlay-macos-x64`, `overlay-macos-arm64`, `overlay-linux-x64` or `overlay-linux-arm64` package from [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.7). Development artifacts are also available from [successful CI runs](https://github.com/drkang7/codex-token-hud/actions). Extract the ZIP/tar.gz completely. On macOS, move **CodexTokenHud.app** to Applications and open it. On Linux, run `./CodexTokenHud/CodexTokenHud`. These packages include Python and Qt; no pip installation is required. The macOS beta is ad-hoc signed, not notarized; use the system's Open Anyway option if blocked.
 
 The native strip provides **tok/s**, **input cache hit rate**, model and sample time. Drag an empty area to move it, and an edge/corner or bottom-right grip to resize it. Layout persists. **Choose chat** searches titles or full IDs and pins a conversation. **Unpin and follow latest activity** follows the log that most recently recorded an event; it does not identify the foreground chat. Simultaneous latest timestamps require an explicit selection. The matching browser panel synchronizes pin/unpin and confirmed range results. **Refresh** rereads logs and acknowledges whether new counts exist. Tray/menu and repeat-launch recovery keep the strip accessible.
 

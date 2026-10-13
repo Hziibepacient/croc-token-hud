@@ -30,7 +30,7 @@ python3 app_follow.py --disable
 
 `--run` 后的程序和参数原样传递，不修改 Codex、编辑器或 shell 配置。它和 `--client-executable` 为新增/改名客户端提供入口，但不会把不兼容的日志变成兼容格式。离线日志、历史导出和纯云端任务没有可跟随的本地客户端进程；离线兼容日志继续手动查看，纯云端记录仍不可测。
 
-**当前源码版本：1.3.0-beta.6。** 独立开源项目，与 OpenAI 无隶属关系。只读本地日志，不改动 Codex 安装，不上传聊天内容。
+**当前源码版本：1.3.0-beta.7。** 独立开源项目，与 OpenAI 无隶属关系。只读本地日志，不改动 Codex 安装，不上传聊天内容。
 
 ![Windows 状态栏](docs/images/hud.png)
 
@@ -40,7 +40,7 @@ python3 app_follow.py --disable
 
 截图来自 macOS ARM64 CI，使用人工统计数据；Linux 使用同一布局及自己的原生窗口后端。
 
-在 [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.6) 下载对应的 `overlay-macos-x64`、`overlay-macos-arm64`、`overlay-linux-x64` 或 `overlay-linux-arm64` 安装包并完整解压；开发产物也可在 [GitHub Actions 成功运行](https://github.com/drkang7/codex-token-hud/actions)中获取。macOS 将 **CodexTokenHud.app** 移到“应用程序”后打开；Linux 运行 `./CodexTokenHud/CodexTokenHud`。这些包内置 Python 和 Qt，无需自己安装依赖。macOS 测试包使用临时签名、尚未公证，遇到系统拦截可通过系统设置中的“仍要打开”启动。
+在 [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.7) 下载对应的 `overlay-macos-x64`、`overlay-macos-arm64`、`overlay-linux-x64` 或 `overlay-linux-arm64` 安装包并完整解压；开发产物也可在 [GitHub Actions 成功运行](https://github.com/drkang7/codex-token-hud/actions)中获取。macOS 将 **CodexTokenHud.app** 移到“应用程序”后打开；Linux 运行 `./CodexTokenHud/CodexTokenHud`。这些包内置 Python 和 Qt，无需自己安装依赖。macOS 测试包使用临时签名、尚未公证，遇到系统拦截可通过系统设置中的“仍要打开”启动。
 
 悬浮条显示 **tok/s、缓存命中率、模型和统计时间**。拖动空白处移动，拖动边角或右下角调整大小，布局自动保存。“选对话”可搜索标题或完整 ID 并固定；右键解除固定后，按日志最近记录的活动跟随，并明确显示“最新活动”。后台对话也可能成为最新活动，因此它不等同于正在查看的窗口；多个对话时间相同会要求手动选择。浏览器面板里的固定/解除固定、区间确认和返回最近响应会同步到悬浮条。
 

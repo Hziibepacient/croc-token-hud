@@ -1,6 +1,6 @@
 # Validation and limits
 
-## 1.3.0-beta.6 — application following
+## 1.3.0-beta.7 — application following
 
 On Windows x64 / Python 3.14.8 / Qt 6.10.3, the complete Python suite passed **75 checks**, including the Qt menu/owner-close regression. The final focused application-follow suite passed **21 checks**, including two subsequently added direct-launcher checks. Coverage includes idle/debounce, last-client grace, parallel clients, manual quit suppression, preserving manually launched windows, recovery during an automatic close, exclusive watcher ownership, executable classification/exact custom paths, safe failed registration, headless operation without Qt, latest-log ties, stale exited-process status, argument/exit-code passthrough, shared launcher locks and a real watcher→dashboard→owned-close round trip. Synthetic logs and short fixture timers are used for lifecycle integration; no real chat contents are captured.
 

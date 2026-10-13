@@ -336,8 +336,14 @@ def configure(command, runtime, codex_home, turn_on, config=None, extra=()):
     register(config, value, turn_on)
     atomic_json(config, value)
     if turn_on:
-        subprocess.Popen(watcher_command(config), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, **({"creationflags": 0x08000000} if os.name == "nt" else {"start_new_session": True}))
+        if os.name == "nt":
+            # Let Task Scheduler own the long-lived watcher. It must not keep an
+            # installer/terminal job alive or die when that caller is closed.
+            task = "CodexTokenHud-" + os.environ["USERNAME"]
+            powershell("Start-ScheduledTask -TaskName '" + task.replace("'", "''") + "'")
+        else:
+            subprocess.Popen(watcher_command(config), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 def watch(config, duration=0):
@@ -382,7 +388,7 @@ def watch(config, duration=0):
                     child = subprocess.Popen(value["command"] + ["--follow-owner", owner, "--runtime", str(runtime),
                                                "--codex-home", value["codex_home"]], stdin=subprocess.DEVNULL,
                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                             **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+                                             **({"creationflags": 0x08000000} if os.name == "nt" else {"start_new_session": True}))
                     state.observed_hud = True
                     error = ""
                 except OSError as failure:

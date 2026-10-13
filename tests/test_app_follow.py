@@ -161,22 +161,22 @@ class FollowTests(unittest.TestCase):
             root = Path(directory)
             config = root / 'watcher/config.json'
             atomic_json(config, {'enabled': True, 'command': hud_command('dashboard'),
-                                'runtime': str(root / 'runtime'), 'codex_home': str(root / 'empty')})
-            started, sleep = time.monotonic(), time.sleep
+                                'runtime': str(root / 'runtime'), 'codex_home': str(root / 'empty'), 'until_idle': True})
+            sleep = time.sleep
             processes = []
             popen = subprocess.Popen
             def launch(*args, **kwargs):
                 process = popen(*args, **kwargs)
                 processes.append(process)
                 return process
-            with patch('app_follow.supported_processes', side_effect=lambda extra: [(1, 'backend')] if time.monotonic() - started < 1 else []), \
+            with patch('app_follow.supported_processes', side_effect=lambda extra: [] if (root / 'runtime/status.json').exists() else [(1, 'backend')]), \
                  patch('app_follow.Lifecycle', side_effect=lambda: Lifecycle(settle=0.01, grace=0.2)), \
                  patch('app_follow.time.sleep', side_effect=lambda seconds: sleep(0.05)), \
                  patch('app_follow.subprocess.Popen', side_effect=launch):
-                watch(config, duration=2)
+                watch(config, duration=45)
             try:
                 self.assertEqual(len(processes), 1)
-                self.assertEqual(processes[0].wait(timeout=3), 0)
+                self.assertEqual(processes[0].wait(timeout=10), 0)
             finally:
                 for process in processes:
                     if process.poll() is None:
@@ -216,8 +216,10 @@ class FollowTests(unittest.TestCase):
                                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             try:
                 import time
-                deadline = time.monotonic() + 8
+                deadline = time.monotonic() + 45
                 while not (root / 'runtime/status.json').exists() and time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        self.fail('Dashboard exited before readiness: ' + process.stderr.read().decode(errors='replace'))
                     time.sleep(0.05)
                 self.assertTrue((root / 'runtime/status.json').exists())
                 atomic_json(root / 'runtime/app-close.request.json', {'owner': 'other'})

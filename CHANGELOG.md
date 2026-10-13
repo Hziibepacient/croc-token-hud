@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0-beta.6 — 2026-10-13
+## 1.3.0-beta.7 — 2026-10-13
 
 Replaced direct logon HUD startup with application following. A small user-session watcher waits for Codex Desktop or a native Codex backend used by CLI/IDE clients; the HUD and collector start only after a client appears. After the final client closes, the watcher asks only its own HUD to exit. Manually opened windows are preserved, and manually exiting suppresses relaunch until the current clients have closed. Windows migrates this copy's legacy task and uses explicit latest-activity binding outside its foreground Desktop window; manual pinning remains authoritative.
 

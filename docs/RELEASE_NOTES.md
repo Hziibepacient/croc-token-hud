@@ -1,4 +1,4 @@
-# Codex Token HUD 1.3.0-beta.6
+# Codex Token HUD 1.3.0-beta.7
 
 Application following replaces direct logon HUD startup across supported environments. A small watcher waits for Desktop/CLI/IDE Codex processes, then starts the HUD and statistics service; after the final client closes it exits only its own HUD. Manually launched windows are preserved, and manual quit suppresses repeated launches during the current client session. Windows migrates the old task and labels non-Desktop statistics as latest activity; manual pinning remains authoritative.
 
