@@ -19,9 +19,15 @@ def main():
     arch = "arm64" if machine in ("arm64", "aarch64") else "x64" if machine in ("amd64", "x86_64") else machine
     target = "macos" if sys.platform == "darwin" else "linux" if sys.platform.startswith("linux") else "win"
     app_dir = work / "app"
+    public_web = work / "public-web"
+    public_web.mkdir(parents=True, exist_ok=True)
+    (public_web / "local-croc.png").unlink(missing_ok=True)
+    for source in (root / "web").glob("*.*"):
+        if source.name != "local-croc.png":
+            shutil.copy2(source, public_web / source.name)
     command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--name", "CodexTokenHud",
                "--onedir", "--distpath", str(app_dir), "--workpath", str(work / "temp"),
-               "--specpath", str(work), "--add-data", str(root / "web") + ":web",
+               "--specpath", str(work), "--add-data", str(public_web) + ":web",
                "--exclude-module", "tkinter", "--exclude-module", "PySide6.QtQml",
                "--exclude-module", "PySide6.QtQuick", "--exclude-module", "PySide6.QtTest"]
     if target == "macos":
