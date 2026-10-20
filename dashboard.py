@@ -204,6 +204,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200, self.server.service.get(url.path[5:], parse_qs(url.query)))
                 return
             static = {"/": ("index.html", "text/html; charset=utf-8"),
+                      "/croc": ("croc.html", "text/html; charset=utf-8"),
+                      "/croc.js": ("croc.js", "text/javascript; charset=utf-8"),
+                      "/croc-model.js": ("croc-model.js", "text/javascript; charset=utf-8"),
+                      "/croc.css": ("croc.css", "text/css; charset=utf-8"),
+                      "/local-croc.png": ("local-croc.png", "image/png"),
                       "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                       "/style.css": ("style.css", "text/css; charset=utf-8")}
             if url.path not in static:

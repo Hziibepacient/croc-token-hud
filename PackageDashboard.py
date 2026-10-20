@@ -11,7 +11,8 @@ def main():
     files = ["metrics.py", "history.py", "dashboard.py", "stats.py", "app_follow.py", "VERSION", "LICENSE", "README.md",
              "README.zh-CN.md", "PRIVACY.md", "SECURITY.md", "CHANGELOG.md", "StartDashboard.ps1", "start-dashboard.sh",
              "overlay.py", "overlay_state.py", "requirements-overlay.txt", "start-overlay.sh", "StartOverlay.command", "THIRD_PARTY.md"]
-    files.extend(str(p.relative_to(root)) for p in (root / "web").glob("*.*"))
+    files.extend(["croc.py", "StartCroc.cmd", "CROC_README.md"])
+    files.extend(str(p.relative_to(root)) for p in (root / "web").glob("*.*") if p.name != "local-croc.png")
     files.extend(str(p.relative_to(root)) for p in (root / "licenses").glob("*.txt"))
     files.extend(["docs/COMPATIBILITY.md", "docs/VALIDATION.md", "docs/RELEASE_NOTES.md", "docs/UI_DESIGN.md",
                   "docs/images/hud.png", "docs/images/dashboard.jpg", "docs/images/overlay.png"])

@@ -1,3 +1,17 @@
+# Croc Token HUD · 鳄鱼 Token 可视化
+
+奶瓶表示输入量，便便行数表示输出量，移动速度表示输出速率。
+
+动画交互设计与改版：**Hziibepacient**。基于 **drkang7/codex-token-hud**，保留原作者版权及 MIT 许可证。
+
+**启动：双击 StartCroc.cmd（需要 Python 3.10+），或运行 python croc.py。**
+
+[中文版使用说明、数据限制和署名](CROC_README.md)
+
+---
+
+以下为原项目说明：
+
 # Codex Token HUD
 
 ## Start with supported applications

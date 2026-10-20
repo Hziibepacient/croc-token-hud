@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Croc Token · 鳄鱼工作台</title><link rel="stylesheet" href="/croc.css"><script src="/croc.js" defer></script></head>
+<body><script src="/croc-model.js"></script><main>
+<header><div><span class="eyebrow">A LITTLE COMPANION FOR YOUR TOKENS</span><h1>鳄鱼工作台<span class="dot"></span></h1></div><span id="modeBadge">本地日志</span></header>
+<section class="toolbar"><label>观察的对话<select id="threads"><option>正在读取本地对话…</option></select></label><button id="refresh">刷新对话</button><button id="demo">试播动画</button></section>
+<p id="status" role="status" aria-live="polite">正在连接…</p>
+<section class="stage"><canvas id="scene" role="img" aria-label="固定奶瓶表示输入量，便便行数表示输出量，向右移动速度表示输出速率。"></canvas><div class="legend"><span>输入 · 奶瓶数量</span><span id="characterState">休息一下</span><span>输出 · 行数与流速</span></div></section>
+<section id="demoControls" hidden><label>奶瓶<select id="bottles"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label><label>便便行数<select id="lanes"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label><label>移动速度<select id="speed"><option value="25">慢悠悠</option><option value="80" selected>匀速</option><option value="180">飞快</option></select></label><button id="finish">模拟对话结束</button><button id="live">返回真实数据</button></section>
+<details><summary>怎么读这个画面</summary><p>奶瓶固定在盘子里；输出量越大，同时移动的便便行数越多。输出速率越高，便便向右移动越快。对话结束立即恢复待机，剩余便便继续离场。</p><p>输入量档位：低于 2千 / 1万 / 3万 / 10万 / 其上；输出量档位：低于 500 / 2千 / 5千 / 1.5万 / 其上。零 Token 不显示。行数是数量档位，不是每颗便便对应固定 Token。</p><p>真实数据来自本机 Codex 日志。仅使用本轮已记录的计数，未获得速率时不移动；工具执行时暂停生成。动画使用最近完成响应的平均速率，并非逐 Token 实时测量。未写入日志的输入和输出暂不可知。</p><p id="lastRecord">等待本地记录</p></details>
+<footer>Based on <a href="https://github.com/drkang7/codex-token-hud" target="_blank" rel="noreferrer">drkang7 / Codex Token HUD</a> · MIT<br>鳄鱼动画交互设计：Hziibepacient · 本地预览版</footer>
+</main></body></html>
