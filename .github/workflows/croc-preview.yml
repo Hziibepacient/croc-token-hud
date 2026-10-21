@@ -7,7 +7,7 @@ on:
         default: 46f8368
   push:
     branches: ['croc-*']
-    paths: ['CrocDesktop.cs', 'web/assets/**', 'tests/CrocPreview.cs', '.github/workflows/croc-preview.yml']
+    paths: ['CrocDesktop.cs', 'BuildCrocSprites.py', 'web/assets/**', 'tests/CrocPreview.cs', '.github/workflows/croc-preview.yml']
 permissions:
   contents: read
 jobs:

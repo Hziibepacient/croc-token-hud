@@ -13,7 +13,9 @@ def main():
              'LICENSE', 'CROC_README.md', 'CROC_RELEASE_NOTES.md', 'web/croc.html', 'web/croc.css',
              'web/croc.js', 'croc_scene.py', 'web/index.html', 'web/app.js', 'web/style.css',
              'web/assets/croc-rest.png', 'web/assets/croc-work.png',
-             'web/assets/bottle.png', 'web/assets/poop.png']
+             'web/assets/bottle.png', 'web/assets/poop.png', 'BuildCrocSprites.py',
+             'web/assets/desktop/rest.png', 'web/assets/desktop/work.png',
+             'web/assets/desktop/bottle.png', 'web/assets/desktop/bottle-empty.png']
     for name in files:
         if not (root / name).is_file():
             raise FileNotFoundError('Public release file missing: ' + name)

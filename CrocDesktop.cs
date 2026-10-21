@@ -31,9 +31,11 @@ class CrocDesktop : Form {
     readonly JavaScriptSerializer json=new JavaScriptSerializer();
     readonly Timer timer=new Timer();
     readonly ContextMenuStrip contextMenu=new ContextMenuStrip();
-    Image rest,work,bottle;
+    // Frame strips built by BuildCrocSprites.py from the original drawings.
+    Image rest,work,bottle,bottleEmpty;
     // Sprites pre-resampled once per scale, so each frame copies small bitmaps.
-    Bitmap restScaled,workScaled,bottleScaled,bottleEmptyScaled,poopScaled;
+    Bitmap[] restFrames=new Bitmap[0],workFrames=new Bitmap[0];
+    Bitmap bottleScaled,bottleEmptyScaled,poopScaled;
     double spriteScale=0;
     readonly string[] barText=new string[3];
     readonly Font[] barFont=new Font[3];
@@ -45,6 +47,7 @@ class CrocDesktop : Form {
     Dictionary<string,object> state=new Dictionary<string,object>();
     List<Particle> particles=new List<Particle>();
     List<Drop> drops=new List<Drop>();
+    List<Puff> puffs=new List<Puff>();
     string lastRun="", status="正在连接本地日志";
     double scale=1, demoUntil=0, demoSeconds=2, demoQuota=100, laneChangeAt=0;
     readonly double[] laneEmission={0,.33,.66};
@@ -54,21 +57,29 @@ class CrocDesktop : Form {
     bool working=false,emitting=false,dragging=false,loaded=false,visibleScene=true,wasWorking=false;
     DateTime previous=DateTime.UtcNow, lastRead=DateTime.MinValue;
     // Animation state, all advanced by Animate(dt) on the scene clock.
-    double clock=0, poseSwitchAt=-10, lastRender=-1, nextBlink=1.8, blinkStart=-10, nextDrop=0;
-    bool doubleBlink=false;
+    double clock=0, poseSwitchAt=-10, lastRender=-1, nextBlink=1.8, blinkStart=-10, nextDrop=0, nextPick=3, pickStart=-10, lastPuff=-1;
+    bool doubleBlink=false, landed=true;
+    int pickLoops=1;
+    // Springs: recoil (px, negative toward the snout), tail sweep (degrees),
+    // the bottles' lagging follow of the head (px) and their own tilt.
+    float recoil=0, recoilVel=0, tail=0, tailVel=0, follow=0, followVel=0, hopY=0;
+    readonly float[] bottleTilt=new float[5], bottleTiltVel=new float[5];
     float workBlend=0, squash=0, squashVel=0, lean=0, effort=0, toolsBlend=0, quotaPercent=0, fillShown=1;
     readonly float[] bottleScale=new float[5], bottleVel=new float[5];
     readonly Random random=new Random();
     class Particle { public float X,Y,TargetY,Speed,Age,Hop; public int Index; }
     class Drop { public float X,Y,VX,VY,Age; }
+    class Puff { public float X,Y,Age,Size; }
     // Scene geometry in the 420 x 244 logical canvas.
-    const float SpriteX=125, SpriteY=35, SpriteSize=164, PivotX=207, PivotY=196;
-    const float ButtX=232, ButtY=140, EndX=408, PoopW=18, PoopH=15;
-    static readonly float[] LaneY={140,116,164}; // Butt height first, then fanned above and below.
-    // Eye whites in sprite pixels (left, top, right, bottom), measured from the PNGs.
-    static readonly float[,] RestEyes={{133,72,224,164},{238,78,332,168}};
-    static readonly float[,] WorkEyes={{132,101,218,181},{232,112,323,189}};
-    static readonly Color Outline=Color.FromArgb(84,104,36), RestSkin=Color.FromArgb(194,226,122), WorkSkin=Color.FromArgb(186,218,108);
+    // The work drawing stands 5.5 px higher than the rest drawing; WorkDrop puts both on the same ground.
+    const float SpriteX=125, SpriteY=35, SpriteSize=164, PivotX=207, PivotY=185, WorkDrop=5.5f;
+    const float ButtX=232, ButtY=145, EndX=408, PoopW=18, PoopH=15;
+    static readonly float[] LaneY={145,121,169}; // Butt height first, then fanned above and below.
+    // Eye whites as fractions of the drawing (left, top, right, bottom).
+    static readonly float[,] RestEyes={{.2714f,.1406f,.4571f,.3203f},{.4857f,.1523f,.6776f,.3281f}};
+        // Tail sweep of each work.png frame, matching BuildCrocSprites.TAIL.
+    static readonly float[] TailAngles={-8,-4,0,4,8,12,16,20};
+    static readonly Color Outline=Color.FromArgb(84,104,36), LidTop=Color.FromArgb(206,236,140), LidBottom=Color.FromArgb(160,190,96);
     static double Now(){return (DateTime.UtcNow-new DateTime(1970,1,1)).TotalSeconds;}
     string Value(string key,string fallback=""){object v;return state.TryGetValue(key,out v)&&v!=null?v.ToString():fallback;}
     double Number(string key,double fallback=0){double n;return double.TryParse(Value(key),out n)?n:fallback;}
@@ -79,8 +90,9 @@ class CrocDesktop : Form {
         root=project;runtime=data;Directory.CreateDirectory(runtime);
         FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;StartPosition=FormStartPosition.Manual;
         Text="Croc Token 桌面鳄鱼";
-        rest=Image.FromFile(Path.Combine(root,"web/assets/croc-rest.png"));work=Image.FromFile(Path.Combine(root,"web/assets/croc-work.png"));
-        bottle=Image.FromFile(Path.Combine(root,"web/assets/bottle.png"));
+        string art=Path.Combine(root,"web/assets/desktop");
+        rest=Image.FromFile(Path.Combine(art,"rest.png"));work=Image.FromFile(Path.Combine(art,"work.png"));
+        bottle=Image.FromFile(Path.Combine(art,"bottle.png"));bottleEmpty=Image.FromFile(Path.Combine(art,"bottle-empty.png"));
         var area=Screen.PrimaryScreen.WorkingArea;Location=new Point(area.Right-450,area.Bottom-230);
         try{var saved=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"layout.json")));scale=Convert.ToDouble(saved["scale"]);Location=new Point(Convert.ToInt32(saved["x"]),Convert.ToInt32(saved["y"]));}catch{}
         scale=Math.Max(.7,Math.Min(2,scale));ClientSize=new Size((int)(420*scale),(int)(244*scale));
@@ -117,25 +129,26 @@ class CrocDesktop : Form {
                 File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,poopMotion=true,width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
-        FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();bottle.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
+        FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();bottle.Dispose();bottleEmpty.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
     }
     void Save(){try{File.WriteAllText(Path.Combine(runtime,"layout.json"),json.Serialize(new{ x=Left,y=Top,scale=scale}));}catch{}}
     void ResizeScene(double value){scale=Math.Max(.7,Math.Min(2,value));ClientSize=new Size((int)(420*scale),(int)(244*scale));Save();Render(true);}
-    static Bitmap Resample(Image source,float width,float height,double factor){
+    static Bitmap Resample(Image source,float width,float height,double factor){return Resample(source,new Rectangle(0,0,source.Width,source.Height),width,height,factor);}
+    static Bitmap Resample(Image source,Rectangle part,float width,float height,double factor){
         var result=new Bitmap(Math.Max(1,(int)Math.Ceiling(width*factor)),Math.Max(1,(int)Math.Ceiling(height*factor)),PixelFormat.Format32bppPArgb);
-        using(var g=Graphics.FromImage(result)){g.InterpolationMode=InterpolationMode.HighQualityBicubic;g.PixelOffsetMode=PixelOffsetMode.HighQuality;g.DrawImage(source,new Rectangle(0,0,result.Width,result.Height));}
+        using(var g=Graphics.FromImage(result))
+        using(var edges=new ImageAttributes()){
+            g.InterpolationMode=InterpolationMode.HighQualityBicubic;g.PixelOffsetMode=PixelOffsetMode.HighQuality;
+            edges.SetWrapMode(WrapMode.TileFlipXY); // No bleed from the neighbouring strip frame.
+            g.DrawImage(source,new Rectangle(0,0,result.Width,result.Height),part.X,part.Y,part.Width,part.Height,GraphicsUnit.Pixel,edges);
+        }
         return result;
     }
-    // The same bottle with its milk replaced by pale glass, for the partly drunk bottle.
-    static Bitmap EmptyBottle(Image source){
-        var copy=new Bitmap(source);
-        var data=copy.LockBits(new Rectangle(0,0,copy.Width,copy.Height),ImageLockMode.ReadWrite,PixelFormat.Format32bppArgb);
-        var pixels=new int[data.Width*data.Height];Marshal.Copy(data.Scan0,pixels,0,pixels.Length);
-        for(int i=0;i<pixels.Length;i++){
-            int y=i/data.Width,a=(pixels[i]>>24)&255,r=(pixels[i]>>16)&255,gg=(pixels[i]>>8)&255,b=pixels[i]&255;
-            if(a>200&&y>data.Height*.5&&r>236&&gg>236&&b>215&&b<=250)pixels[i]=unchecked((int)0x9CC4E6F0);
-        }
-        Marshal.Copy(pixels,0,data.Scan0,pixels.Length);copy.UnlockBits(data);return copy;
+    // A strip of square frames, side by side.
+    static Bitmap[] Frames(Image strip,double factor){
+        int count=Math.Max(1,strip.Width/strip.Height);var frames=new Bitmap[count];
+        for(int i=0;i<count;i++)frames[i]=Resample(strip,new Rectangle(i*strip.Height,0,strip.Height,strip.Height),SpriteSize,SpriteSize,factor);
+        return frames;
     }
     // Soft-serve swirl drawn as vectors at 4x and resampled once, with the same
     // thick dark outline as the crocodile.
@@ -162,13 +175,15 @@ class CrocDesktop : Form {
             return Resample(big,PoopW,PoopH,factor);
         }
     }
-    void DisposeSprites(){foreach(var b in new[]{restScaled,workScaled,bottleScaled,bottleEmptyScaled,poopScaled})if(b!=null)b.Dispose();}
+    void DisposeSprites(){
+        foreach(var b in restFrames)b.Dispose();foreach(var b in workFrames)b.Dispose();
+        foreach(var b in new[]{bottleScaled,bottleEmptyScaled,poopScaled})if(b!=null)b.Dispose();
+    }
     void EnsureSprites(){
         if(spriteScale==scale)return;
         DisposeSprites();spriteScale=scale;
-        restScaled=Resample(rest,SpriteSize,SpriteSize,scale);workScaled=Resample(work,SpriteSize,SpriteSize,scale);
-        bottleScaled=Resample(bottle,20,30,scale);
-        using(var empty=EmptyBottle(bottle))bottleEmptyScaled=Resample(empty,20,30,scale);
+        restFrames=Frames(rest,scale);workFrames=Frames(work,scale);
+        bottleScaled=Resample(bottle,20,30,scale);bottleEmptyScaled=Resample(bottleEmpty,20,30,scale);
         poopScaled=BuildPoop(scale);
     }
     void FreeSurface(){
@@ -256,7 +271,8 @@ class CrocDesktop : Form {
     static float Clamp01(float v){return v<0?0:v>1?1:v;}
     static float EaseOutBack(float t){t=Clamp01(t);float c=1.9f;return 1+(c+1)*(float)Math.Pow(t-1,3)+c*(float)Math.Pow(t-1,2);}
     bool Busy(){
-        return emitting||particles.Count>0||drops.Count>0||clock-poseSwitchAt<.1||Math.Abs(squashVel)>.02f||Math.Abs(squash)>.003f||(toolsBlend>.01f&&toolsBlend<.99f);
+        return emitting||particles.Count>0||drops.Count>0||puffs.Count>0||clock-poseSwitchAt<.6||Math.Abs(squashVel)>.02f||Math.Abs(squash)>.003f
+            ||Math.Abs(recoilVel)>.2f||Math.Abs(tailVel)>.3f||Math.Abs(followVel)>.2f||(toolsBlend>.01f&&toolsBlend<.99f);
     }
     void Animate(float dt,double seconds){
         clock+=dt;
@@ -265,24 +281,50 @@ class CrocDesktop : Form {
         motion+=(target-motion)*blend;
         float spacing=demoUntil>Now()?(float)Math.Max(25,Math.Min(70,demoSeconds*15+10)):(float)Number("spacing",70);
         smoothSpacing+=(spacing-smoothSpacing)*blend;
-        // Pose: squash down, swap the drawing at the bottom of the squash, then spring back up.
-        if(working!=wasWorking){squashVel+=working?-2.6f:-1.8f;wasWorking=working;poseSwitchAt=clock;}
-        if(clock-poseSwitchAt>=.07)workBlend=working?1:0;
+        // Pose change as a little jump: crouch, leap (swapping the drawing on the
+        // way up), land with a squash and settle on the spring.
+        if(working!=wasWorking){
+            squashVel+=working?-2.4f:-1.8f;wasWorking=working;poseSwitchAt=clock;landed=false;
+            // Back at rest, the finger goes straight back to the nose.
+            if(!working){pickStart=clock+.45;pickLoops=1;nextPick=clock+5+random.NextDouble()*4;}
+        }
+        double jump=clock-poseSwitchAt;
+        hopY=jump>=.07&&jump<.31?-(working?8:6)*(float)Math.Sin(Math.PI*(jump-.07)/.24):0;
+        if(jump>=.14)workBlend=working?1:0;
+        if(!landed&&jump>=.31){landed=true;squashVel-=1.5f;}
         effort+=((emitting?Clamp01((motion-.2f)/1.4f):0)-effort)*blend;
         lean+=((working?-1.2f-3.4f*effort:0)-lean)*blend;
         toolsBlend+=((working&&!emitting?1:0)-toolsBlend)*(1-(float)Math.Exp(-dt/.15));
-        // Each poop leaving the butt lane gives the body a small push.
+        // Every poop is a shot: it leaves fast, and the body, tail and bottles take
+        // the recoil. Single shots kick visibly; a steady stream becomes a held
+        // forward push with a shudder, so kicks shrink as the shot rate rises.
         float speed=(EndX-ButtX)*motion;
+        float shotRate=emitting?Math.Max(1,lanes)*speed/Math.Max(17,smoothSpacing):0;
+        float kick=1/(1+.13f*shotRate);
         for(int lane=0;lane<lanes&&lane<3;lane++){
             if(!emitting||speed<=0)continue;
             laneEmission[lane]+=speed*dt/Math.Max(17,smoothSpacing);
             while(laneEmission[lane]>=1){
                 laneEmission[lane]-=1;
-                particles.Add(new Particle{X=ButtX,Y=ButtY,TargetY=LaneY[lane],Speed=speed,Index=particles.Count+lane});
-                if(lane==0)squashVel-=.55f/(1+motion);
+                particles.Add(new Particle{X=ButtX+recoil,Y=ButtY,TargetY=LaneY[lane],Speed=speed*1.9f,Index=particles.Count+lane});
+                recoilVel-=210*kick;tailVel+=220*kick;squashVel-=.9f*kick;
+                for(int i=0;i<5;i++)bottleTiltVel[i]+=((float)random.NextDouble()*2-1)*55*kick;
+                if(clock-lastPuff>.05){lastPuff=clock;puffs.Add(new Puff{X=ButtX+4+recoil,Y=ButtY-2+(float)random.NextDouble()*4,Size=.8f+.4f*kick});}
             }
         }
         squashVel+=(-170*squash-13*squashVel)*dt;squash+=squashVel*dt;squash=Math.Max(-.12f,Math.Min(.12f,squash));
+        recoilVel+=(-200*recoil-13*recoilVel)*dt;recoil=Math.Max(-14,Math.Min(5,recoil+recoilVel*dt));
+        float tailGoal=working?2+6*effort:0;
+        tailVel+=(110*(tailGoal-tail)-10*tailVel)*dt;tail=Math.Max(-8,Math.Min(20,tail+tailVel*dt));
+        // The bottles drift after the head with a lag, so a lean or a kick reaches them late.
+        float head=recoil+(float)Math.Sin((lean+recoil*.35f)*Math.PI/180)*(PivotY-80);
+        followVel+=(55*(head*.9f-follow)-8*followVel)*dt;follow+=followVel*dt;
+        for(int i=0;i<5;i++){bottleTiltVel[i]+=(-110*bottleTilt[i]-6*bottleTiltVel[i])*dt;bottleTilt[i]=Math.Max(-25,Math.Min(25,bottleTilt[i]+bottleTiltVel[i]*dt));}
+        foreach(var f in puffs){f.Age+=dt;f.X+=26*dt;f.Y-=9*dt;}
+        puffs.RemoveAll(f=>f.Age>.42f);
+        // Nose picking now and then while resting.
+        if(working)nextPick=Math.Max(nextPick,clock+2);
+        else if(clock>=nextPick){pickStart=clock;pickLoops=random.NextDouble()<.4?2:1;nextPick=clock+4.5+random.NextDouble()*5;}
         foreach(var p in particles){
             p.Age+=dt;float desired=emitting?speed:p.Speed;p.Speed+=(desired-p.Speed)*blend;p.X+=p.Speed*dt;
             // Fan out from the butt into the lane over the first 46 px, then hop along it.
@@ -293,7 +335,7 @@ class CrocDesktop : Form {
         // Blinks every few seconds, sometimes twice.
         if(clock>=nextBlink){blinkStart=clock;doubleBlink=random.NextDouble()<.25;nextBlink=clock+2.2+random.NextDouble()*3.8;}
         // Sweat when running at the top tiers.
-        if(effort>.62f&&clock>=nextDrop){nextDrop=clock+.55+random.NextDouble()*.5;drops.Add(new Drop{X=232+(float)random.NextDouble()*10,Y=70,VX=18+(float)random.NextDouble()*14,VY=-28});}
+        if(effort>.62f&&clock>=nextDrop){nextDrop=clock+.55+random.NextDouble()*.5;drops.Add(new Drop{X=232+(float)random.NextDouble()*10,Y=75,VX=18+(float)random.NextDouble()*14,VY=-28});}
         foreach(var d in drops){d.Age+=dt;d.VY+=150*dt;d.X+=d.VX*dt;d.Y+=d.VY*dt;}
         drops.RemoveAll(d=>d.Age>.75f);
         // Bottles pop in and out on springs; the last bottle's milk level eases.
@@ -301,11 +343,21 @@ class CrocDesktop : Form {
         float fill=bottles>0?Math.Max(.1f,Math.Min(1,(quotaPercent-20*(bottles-1))/20f)):1;
         fillShown+=(fill-fillShown)*blend;
     }
+    // Lids drop fast, hold, and lift a little slower.
+    static float Lid(double t){return t<.05?(float)(t/.05):t<.08?1:t<.17?1-(float)((t-.08)/.09):0;}
     float Blink(){
         double t=clock-blinkStart;
-        if(t<.16)return 1-(float)Math.Abs(t/.08-1);
-        if(doubleBlink&&t>=.24&&t<.4)return 1-(float)Math.Abs((t-.24)/.08-1);
-        return 0;
+        return Math.Max(Lid(t),doubleBlink&&t>=.22?Lid(t-.22):0);
+    }
+    Bitmap CurrentFrame(){
+        if(workBlend>.5f){
+            int best=0;for(int i=1;i<TailAngles.Length&&i<workFrames.Length;i++)if(Math.Abs(TailAngles[i]-tail)<Math.Abs(TailAngles[best]-tail))best=i;
+            return workFrames[Math.Min(best,workFrames.Length-1)];
+        }
+        // Starting work pulls the finger out of the nose during the crouch.
+        if(working&&restFrames.Length>8)return restFrames[clock-poseSwitchAt<.07?7:8];
+        int cycle=restFrames.Length-1,step=(int)((clock-pickStart)*15);
+        return cycle>0&&step>=0&&step<cycle*pickLoops?restFrames[1+step%cycle]:restFrames[0];
     }
     static GraphicsPath RoundedRect(float x,float y,float w,float h,float radius){
         var path=new GraphicsPath();float d=radius*2;
@@ -350,14 +402,15 @@ class CrocDesktop : Form {
         }
     }
     void DrawBottles(Graphics g){
-        // Five staggered slots beside the snout; each floats on its own phase.
-        float[,] slots={{125,84,.28f},{132,114,-.12f},{110,136,.06f},{149,150,-.05f},{118,174,.14f}};
+        // Five staggered slots in front of the snout; each floats on its own phase,
+        // trails the head's lean and recoil, and wobbles when a shot lands.
+        float[,] slots={{117,84,.28f},{124,114,-.12f},{102,136,.06f},{141,150,-.05f},{110,174,.14f}};
         int last=bottles-1;
         for(int i=0;i<5;i++){
             float s=bottleScale[i];if(s<.02f)continue;
             var saved=g.Save();
-            g.TranslateTransform(slots[i,0],slots[i,1]+(float)Math.Sin(clock*2.1+i*1.3)*1.4f);
-            g.RotateTransform(slots[i,2]*180/(float)Math.PI+(float)Math.Sin(clock*1.6+i*.9)*3);
+            g.TranslateTransform(slots[i,0]+follow*(.75f+.07f*i),slots[i,1]+(float)Math.Sin(clock*2.1+i*1.3)*1.4f-Math.Abs(bottleTilt[i])*.08f);
+            g.RotateTransform(slots[i,2]*180/(float)Math.PI+(float)Math.Sin(clock*1.6+i*.9)*3+bottleTilt[i]);
             g.ScaleTransform(s,s);
             var box=new RectangleF(-10,-22,20,30);
             if(i==last&&fillShown<.995f){
@@ -423,18 +476,21 @@ class CrocDesktop : Form {
         float amp=working?.011f:.017f;
         float sy=1+squash+amp*breath,sx=1-squash*.6f-amp*.4f*breath;
         float bob=working?(float)Math.Sin(clock*(6+6*effort))*(.5f+.8f*effort):0;
-        g.TranslateTransform(PivotX,PivotY+bob);g.RotateTransform(lean);g.ScaleTransform(sx,sy);g.TranslateTransform(-PivotX,-PivotY);
-        var box=new RectangleF(SpriteX,SpriteY,SpriteSize,SpriteSize);
-        g.DrawImage(workBlend>.5f?workScaled:restScaled,box);
-        float closure=Blink();
+        // A steady stream shudders the body slightly.
+        float shudder=emitting?(float)Math.Sin(clock*47)*.5f*effort:0;
+        g.TranslateTransform(PivotX+recoil+shudder,PivotY+bob+hopY);g.RotateTransform(lean+recoil*.35f);g.ScaleTransform(sx,sy);g.TranslateTransform(-PivotX,-PivotY);
+        var box=new RectangleF(SpriteX,SpriteY+(workBlend>.5f?WorkDrop:0),SpriteSize,SpriteSize);
+        g.DrawImage(CurrentFrame(),box);
+        // Only the resting face blinks; the working brows sit over the eye whites.
+        float closure=workBlend>.5f?0:Blink();
         if(closure>.02f){
-            bool w=workBlend>.5f;var eyes=w?WorkEyes:RestEyes;var sprite=w?work:rest;
-            float fx=SpriteSize/sprite.Width,fy=SpriteSize/sprite.Height;
-            using(var skin=new SolidBrush(w?WorkSkin:RestSkin))
+            var eyes=RestEyes;
             using(var lid=new Pen(Outline,2.6f)){
                 lid.StartCap=lid.EndCap=LineCap.Round;
                 for(int i=0;i<2;i++){
-                    float x=SpriteX+eyes[i,0]*fx,y=SpriteY+eyes[i,1]*fy,ew=(eyes[i,2]-eyes[i,0])*fx,eh=(eyes[i,3]-eyes[i,1])*fy;
+                    float x=box.X+eyes[i,0]*SpriteSize,y=box.Y+eyes[i,1]*SpriteSize,ew=(eyes[i,2]-eyes[i,0])*SpriteSize,eh=(eyes[i,3]-eyes[i,1])*SpriteSize;
+                    // The lid is lit like the head: light on top, shade below.
+                    using(var skin=new LinearGradientBrush(new RectangleF(x,y-4,ew,eh+8),LidTop,LidBottom,90f))
                     using(var eye=new GraphicsPath()){
                         // Slightly larger than the white, still inside the thick eye ring.
                         eye.AddEllipse(x-2.2f,y-2.2f,ew+4.4f,eh+4.4f);
@@ -449,7 +505,26 @@ class CrocDesktop : Form {
         }
         g.Restore(saved);
     }
+    void DrawShadow(Graphics g){
+        // Soft contact shadow; it shrinks and fades while the crocodile is in the air.
+        float lift=Clamp01(-hopY/8),w=104*(1-.25f*lift),h=13*(1-.25f*lift),cx=PivotX+recoil*.6f,cy=PivotY+1.5f;
+        using(var path=new GraphicsPath()){
+            path.AddEllipse(cx-w/2,cy-h/2,w,h);
+            using(var brush=new PathGradientBrush(path)){
+                brush.CenterColor=Color.FromArgb((int)(70*(1-.5f*lift)),58,70,40);brush.SurroundColors=new[]{Color.FromArgb(0,58,70,40)};
+                g.FillPath(brush,path);
+            }
+        }
+    }
     void DrawEffects(Graphics g){
+        // Puffs at the butt for each shot.
+        using(var puff=new SolidBrush(Color.Transparent))
+        foreach(var f in puffs){
+            float t=f.Age/.42f,r=(2.5f+9*t)*f.Size;
+            puff.Color=Color.FromArgb((int)(170*(1-t)),204,188,156);
+            g.FillEllipse(puff,f.X-r,f.Y-r,r*2,r*2);
+            g.FillEllipse(puff,f.X+r*.5f,f.Y-r*1.2f,r*1.2f,r*1.2f);
+        }
         // Sweat drops at the top tiers.
         using(var fill=new SolidBrush(Color.FromArgb(200,160,214,240)))
         using(var edge=new Pen(Color.FromArgb(200,76,136,176),1.1f))
@@ -482,6 +557,7 @@ class CrocDesktop : Form {
         using(var fade=new ImageAttributes()){
             g.Clear(Color.Transparent);g.ScaleTransform((float)scale,(float)scale);
             g.InterpolationMode=InterpolationMode.Bilinear;g.SmoothingMode=SmoothingMode.AntiAlias;g.PixelOffsetMode=PixelOffsetMode.Half;
+            DrawShadow(g);
             DrawBottles(g);
             DrawPoops(g,fade,new ColorMatrix());
             // Paint the character after the poops so they emerge from behind it.
