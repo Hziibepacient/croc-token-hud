@@ -39,8 +39,8 @@ class CrocDesktop : Form {
     const int Crouch=0, Recoil=1, Relief=2, Think=3, Drink=4, Jump=5;
     Bitmap bottleScaled,bottleEmptyScaled,poopScaled;
     double spriteScale=0;
-    readonly string[] barText=new string[3];
-    readonly Font[] barFont=new Font[3];
+    readonly string[] barText=new string[4];
+    readonly Font[] barFont=new Font[4];
     // The frame is drawn straight into a premultiplied DIB that stays selected
     // into its own DC, so each update hands the same pixels to the compositor.
     Bitmap frame;
@@ -117,8 +117,8 @@ class CrocDesktop : Form {
                 if(frame.GetPixel(0,0).A!=0)throw new Exception("Background is not transparent");
                 if(frame.GetPixel((int)(90*scale),(int)(216*scale)).A<200)throw new Exception("Bottom data bar missing");
                 if(BottleCount(0)!=0||BottleCount(20)!=1||BottleCount(74)!=4||BottleCount(100)!=5)throw new Exception("Quota bottle mapping invalid");
-                state["quota_status"]="recorded";state["quota_remaining"]=54;state["quota_resets_at"]=Now()+3600;state["rate"]=42;
-                var bar=BarValues();if(bar[0]!="54%"||bar[2]!="42 tok/s")throw new Exception("Data bar values invalid");
+                state["quota_status"]="recorded";state["quota_remaining"]=54;state["quota_resets_at"]=Now()+3600;state["rate"]=42;state["cache_percent"]=80;
+                var bar=BarValues();if(bar.Length!=4||bar[0]!="54%"||bar[2]!="42 tok/s"||bar[3]!="80%")throw new Exception("Data bar values invalid");
                 Render();frame.Save(Path.Combine(runtime,"working-preview.png"),ImageFormat.Png);
                 working=false;emitting=false;Render();
                 if(working)throw new Exception("End did not restore resting pose");
@@ -131,7 +131,7 @@ class CrocDesktop : Form {
                 state["model"]="smoke-model";state["cache_percent"]=80;
                 for(int i=0;i<8;i++){var testMenu=Popup();testMenu.Show(PointToScreen(new Point(30,30)));Application.DoEvents();testMenu.Close();Application.DoEvents();if(testMenu.IsDisposed)throw new Exception("Context menu disposed while handling messages");}
                 if(!contextMenu.Items[2].Text.Contains("smoke-model")||!contextMenu.Items[3].Text.Contains("80"))throw new Exception("Model/cache menu fields missing");
-                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,poopMotion=true,width=Width,height=Height}));
+                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,cacheInDataBar=true,poopMotion=true,width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
         FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();poses.Dispose();bottle.Dispose();bottleEmpty.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
@@ -394,10 +394,11 @@ class CrocDesktop : Form {
     string[] BarValues(){
         return new[]{QuotaKnown()?Number("quota_remaining").ToString("0.#")+"%":"待更新",
             Number("quota_resets_at")>0?Clock(Number("quota_resets_at")):"—",
-            Value("rate").Length>0?Number("rate").ToString("0.#")+" tok/s":"—"};
+            Value("rate").Length>0?Number("rate").ToString("0.#")+" tok/s":"—",
+            Value("cache_percent").Length>0?Number("cache_percent").ToString("0.#")+"%":"—"};
     }
     void DrawDataBar(Graphics g){
-        const float x=80,y=202,w=260,h=30;
+        const float x=60,y=202,w=300,h=30;
         using(var shadow=RoundedRect(x,y+1,w,h,5))
         using(var shadowBrush=new SolidBrush(Color.FromArgb(16,48,42,32)))g.FillPath(shadowBrush,shadow);
         using(var shape=RoundedRect(x,y,w,h,5))
@@ -405,15 +406,15 @@ class CrocDesktop : Form {
         using(var border=new Pen(Color.FromArgb(180,193,187,177),.8f)){
             g.FillPath(fill,shape);g.DrawPath(border,shape);
         }
-        float[] widths={60,70,130};
+        float[] widths={55,65,115,65};
         using(var divider=new Pen(Color.FromArgb(85,193,187,177),.7f)){
-            g.DrawLine(divider,x+60,y+8,x+60,y+h-8);
-            g.DrawLine(divider,x+130,y+8,x+130,y+h-8);
+            float separator=x;
+            for(int i=0;i<widths.Length-1;i++){separator+=widths[i];g.DrawLine(divider,separator,y+8,separator,y+h-8);}
         }
         var values=BarValues();float left=x;
         using(var valueBrush=new SolidBrush(Color.FromArgb(58,59,56)))
         using(var format=new StringFormat(StringFormat.GenericTypographic){Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center,FormatFlags=StringFormatFlags.NoWrap}){
-            for(int i=0;i<3;i++){
+            for(int i=0;i<values.Length;i++){
                 if(barText[i]!=values[i]){
                     // Fit the entire value, including tok/s, once per new value; never truncate the unit.
                     float size=15;
