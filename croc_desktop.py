@@ -8,6 +8,7 @@ import time
 
 from dashboard import Dashboard
 from metrics import atomic_json, read_selection
+from local_quota import LocalQuota
 
 
 def level(value, limits):
@@ -26,23 +27,19 @@ def scene(value):
     rate = last.get('rate') if valid else None
     if not isinstance(rate, (float, int)) or not math.isfinite(rate) or rate <= 0:
         rate = None
-    band = '' if rate is None else '慢悠悠' if rate < 30 else '匀速' if rate < 80 else '飞快'
-    user_input = m.get('user_input') or {}
-    estimate = user_input.get('text_tokens_estimate')
-    bottles = level(estimate, [100, 500, 2000, 8000])
-    if user_input.get('attachments_unknown') and bottles == 0:
-        bottles = 1
+    tier = level(rate, [15, 30, 60, 100])
+    band = ['', '慢悠悠', '轻快', '忙碌', '飞快', '全速'][tier]
     return dict(working=ok and m.get('stage') in ('generating', 'tools'),
-                new_input_estimate=estimate, attachments_unknown=bool(user_input.get('attachments_unknown')),
                 model=m.get('model') or last.get('model') or '',
                 cache_percent=last.get('cache_percent'),
                 last_input=last.get('input_tokens'), last_output=last.get('output_tokens'),
                 cached_input=last.get('cached_input_tokens'), measured_at=last.get('measured_at_ms'),
                 emitting=ok and m.get('stage') == 'generating' and rate is not None,
                 idle=ok and m.get('stage') == 'idle',
-                bottles=bottles,
-                lanes=level(m.get('turn_output_tokens'), [500, 2000, 5000, 15000]) if valid else 0,
-                seconds=0 if rate is None else 4 if rate < 30 else 2 if rate < 80 else .8,
+                speed_tier=tier,
+                lanes=[0, 1, 1, 2, 2, 3][tier], rate=rate,
+                seconds=0 if rate is None else max(.55,4.4/(1+rate/40)),
+                spacing=70 if rate is None else max(25,70-9*math.log2(1+rate/10)),
                 band=band, run=str(m.get('turn_id') or start or ''),
                 status='日志暂不可读' if not ok else '工作中 · 等待计数' if rate is None and m.get('stage') != 'idle' else '休息一下' if m.get('stage') == 'idle' else band)
 
@@ -65,6 +62,7 @@ def main():
         subprocess.run([str(compiler), '/nologo', '/target:winexe', '/optimize+', '/out:' + str(exe),
                         '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.Web.Extensions.dll', str(source)], check=True, creationflags=subprocess.CREATE_NO_WINDOW)
     service = Dashboard(args.codex_home, runtime)
+    quota = LocalQuota()
     process = subprocess.Popen([str(exe), str(root), str(runtime)] + (['--demo'] if args.demo else []))
     try:
         while process.poll() is None:
@@ -84,12 +82,14 @@ def main():
                 state['following'] = '固定对话' if choice else '最新活动（可能是后台对话）'
             except Exception as error:
                 state['status'] = '读取暂停：' + str(error)
+            recent = sorted(service.catalog.files.values(), key=lambda r: r['updated_at_ms'], reverse=True)[:24]
+            state.update(quota.update([r['path'] for r in recent]))
             state.update(updated=time.time(), selected=selected, threads=[dict(id=r['id'], title=r['title']) for r in rows[:40]])
             try:
                 atomic_json(runtime / 'scene.json', state)
             except OSError:
                 pass  # A brief Windows file-sharing collision is retried next poll.
-            time.sleep(.4)
+            time.sleep(.1)
     finally:
         if process.poll() is None:
             process.terminate()

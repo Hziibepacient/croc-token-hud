@@ -8,17 +8,18 @@ class DesktopSceneTests(unittest.TestCase):
                 'turn_started_at_ms': 100, 'turn_output_tokens': 15000, 'user_input': {'text_tokens_estimate': 100},
                 'last': {'turn_id': 'a', 'measured_at_ms': 101, 'input_tokens': 100000, 'rate': rate}}}
 
-    def test_agreed_speed_bands(self):
-        for rate, seconds in [(1, 4), (29.9, 4), (30, 2), (79.9, 2), (80, .8), (200, .8)]:
-            self.assertEqual(scene(self.sample(rate))['seconds'], seconds)
-
+    def test_continuous_speed_and_density(self):
+        samples=[scene(self.sample(rate)) for rate in [1,10,30,80,200,500]]
+        self.assertTrue(all(a['seconds']>b['seconds'] for a,b in zip(samples,samples[1:])))
+        self.assertTrue(all(a['spacing']>=b['spacing'] for a,b in zip(samples,samples[1:])))
+        self.assertEqual([s['lanes'] for s in samples],[1,1,2,2,3,3])
     def test_counts_and_no_estimated_input(self):
         s = scene(self.sample())
-        self.assertEqual((s['bottles'], s['lanes']), (2, 5))
+        self.assertEqual(('bottles' in s, s['lanes']), (False, 2))
         value = self.sample()
         value['metrics']['last']['turn_id'] = 'old'
         s = scene(value)
-        self.assertEqual((s['bottles'], s['lanes'], s['seconds']), (2, 0, 0))
+        self.assertEqual(('bottles' in s, s['lanes'], s['seconds']), (False, 0, 0))
 
     def test_completion_and_tool_wait(self):
         self.assertFalse(scene(self.sample(stage='idle'))['working'])
@@ -46,10 +47,15 @@ class DesktopSceneTests(unittest.TestCase):
         value = self.sample()
         for tokens in [9999, 10000, 50000, 150000, 247312, 300000]:
             value['metrics']['last']['input_tokens'] = tokens
-            self.assertEqual(scene(value)['bottles'], 2)
+            self.assertNotIn('bottles', scene(value))
 
     def test_fresh_message_estimate_boundaries(self):
         value = self.sample()
         for tokens, expected in [(0,0),(99,1),(100,2),(500,3),(2000,4),(8000,5)]:
             value['metrics']['user_input']['text_tokens_estimate'] = tokens
-            self.assertEqual(scene(value)['bottles'], expected)
+            self.assertNotIn('bottles', scene(value))
+
+    def test_five_tier_boundaries(self):
+        for rate,tier,lanes in [(14.9,1,1),(15,2,1),(29.9,2,1),(30,3,2),(59.9,3,2),(60,4,2),(99.9,4,2),(100,5,3)]:
+            result=scene(self.sample(rate))
+            self.assertEqual((result["speed_tier"],result["lanes"]),(tier,lanes))

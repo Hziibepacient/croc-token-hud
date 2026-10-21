@@ -35,11 +35,15 @@ class CrocDesktop : Form {
     Dictionary<string,object> state=new Dictionary<string,object>();
     List<Particle> particles=new List<Particle>();
     string lastRun="", status="正在连接本地日志";
-    double scale=1, emission=0, demoUntil=0, demoSeconds=2;
+    double scale=1, demoUntil=0, demoSeconds=2, demoQuota=100, laneChangeAt=0;
+    readonly double[] laneEmission={0,.33,.66};
+    float motion=0, smoothSpacing=50;
+    readonly float[] rowStarts=new float[5];
     int bottles=0, lanes=0;
+    int pendingLanes=0;
     bool working=false,emitting=false,dragging=false,loaded=false,visibleScene=true;
     DateTime previous=DateTime.UtcNow, lastRead=DateTime.MinValue;
-    class Particle { public float X,Y,Speed; public int Row; }
+    class Particle { public float X,Y,Speed,Age,Phase; public int Row; }
     float RowY(int row){return 80+row*22;}
     float FrontEdge(float y){
         var bitmap=(Bitmap)work;
@@ -49,10 +53,11 @@ class CrocDesktop : Form {
     }
     static readonly int[] LaneOrder={3,2,4,1,0}; // Butt first, then spread above/below.
     float RowStart(int row){
+        if(rowStarts[row]>0)return rowStarts[row];
         // Follow the actual back/tail contour, instead of a fixed empty column.
         var bitmap=(Bitmap)work;
         int py=Math.Max(0,Math.Min(bitmap.Height-1,(int)((RowY(row)-35)*bitmap.Height/164)));
-        for(int x=bitmap.Width-1;x>=0;x--)if(bitmap.GetPixel(x,py).A>128)return 125+x*164f/bitmap.Width-4;
+        for(int x=bitmap.Width-1;x>=0;x--)if(bitmap.GetPixel(x,py).A>128){rowStarts[row]=125+x*164f/bitmap.Width-4;return rowStarts[row];}
         return 250;
     }
     static double Now(){return (DateTime.UtcNow-new DateTime(1970,1,1)).TotalSeconds;}
@@ -69,7 +74,7 @@ class CrocDesktop : Form {
         bottle=Image.FromFile(Path.Combine(root,"web/assets/bottle.png"));poop=Image.FromFile(Path.Combine(root,"web/assets/poop.png"));
         var area=Screen.PrimaryScreen.WorkingArea;Location=new Point(area.Right-450,area.Bottom-230);
         try{var saved=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"layout.json")));scale=Convert.ToDouble(saved["scale"]);Location=new Point(Convert.ToInt32(saved["x"]),Convert.ToInt32(saved["y"]));}catch{}
-        scale=Math.Max(.7,Math.Min(2,scale));ClientSize=new Size((int)(420*scale),(int)(220*scale));
+        scale=Math.Max(.7,Math.Min(2,scale));ClientSize=new Size((int)(420*scale),(int)(244*scale));
         bool onScreen=false;foreach(var screen in Screen.AllScreens)if(screen.WorkingArea.IntersectsWith(Bounds))onScreen=true;
         if(!onScreen)Location=new Point(area.Right-Width-20,area.Bottom-Height-20);
         tray=new NotifyIcon();tray.Icon=SystemIcons.Application;tray.Text="桌面鳄鱼 · 右键设置";tray.Visible=true;
@@ -77,27 +82,40 @@ class CrocDesktop : Form {
         MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){dragging=true;ReleaseCapture();SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero);dragging=false;Save();}else if(e.Button==MouseButtons.Right)Popup().Show(Cursor.Position);};
         MouseWheel+=(s,e)=>ResizeScene(scale+(e.Delta>0?.1:-.1));
         timer.Interval=25;timer.Tick+=(s,e)=>Tick();
-        Shown+=(s,e)=>{loaded=true;if(demo)Demo(2);timer.Start();Render();};
+        Shown+=(s,e)=>{loaded=true;if(demo)Demo(smoke?.7:2,smoke?(double?)100:null);timer.Start();Render();};
         if(smoke){var check=new Timer();check.Interval=1000;check.Tick+=(s,e)=>{
             check.Stop();timer.Stop();
             try{
-                if(!IsWindowVisible(Handle)||frame==null||!working||bottles!=5||lanes!=5)throw new Exception("Working window state invalid");
+                if(!IsWindowVisible(Handle)||frame==null||!working||bottles!=5||lanes!=3)throw new Exception("Working window state invalid");
                 if(frame.GetPixel(0,0).A!=0)throw new Exception("Background is not transparent");
-                frame.Save(Path.Combine(runtime,"working-preview.png"),ImageFormat.Png);
+                if(frame.GetPixel((int)(90*scale),(int)(216*scale)).A<200)throw new Exception("Bottom data bar missing");
+                if(BottleCount(0)!=0||BottleCount(20)!=1||BottleCount(74)!=4||BottleCount(100)!=5)throw new Exception("Quota bottle mapping invalid");
+                state["quota_status"]="recorded";state["quota_remaining"]=54;state["quota_resets_at"]=Now()+3600;state["rate"]=42;
+                var bar=BarValues();if(bar[0]!="54%"||bar[2]!="42 tok/s")throw new Exception("Data bar values invalid");
+                Render();frame.Save(Path.Combine(runtime,"working-preview.png"),ImageFormat.Png);
                 working=false;emitting=false;Render();
                 if(working)throw new Exception("End did not restore resting pose");
                 frame.Save(Path.Combine(runtime,"resting-preview.png"),ImageFormat.Png);
+                Demo(4);Tick();if(lanes!=1)throw new Exception("Slow throughput must use one lane");
+                Demo(2);Tick();if(lanes!=2)throw new Exception("Medium throughput must use two lanes");
+                Demo(.8);Tick();if(lanes!=3)throw new Exception("Fast throughput must use three lanes");
+                Demo(2,40);Tick();if(bottles!=2)throw new Exception("Quota demo invalid");
+                foreach(double t in new[]{4.0,3.0,2.0,1.2,.7}){Demo(t);Tick();if(bottles!=2||lanes!=DemoLanes(t))throw new Exception("Animation changed bottles or tier invalid");}
                 state["model"]="smoke-model";state["cache_percent"]=80;
                 for(int i=0;i<8;i++){var testMenu=Popup();testMenu.Show(PointToScreen(new Point(30,30)));Application.DoEvents();testMenu.Close();Application.DoEvents();if(testMenu.IsDisposed)throw new Exception("Context menu disposed while handling messages");}
                 if(!contextMenu.Items[2].Text.Contains("smoke-model")||!contextMenu.Items[3].Text.Contains("80"))throw new Exception("Model/cache menu fields missing");
-                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,width=Width,height=Height}));
+                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,connectingWakes=true,width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
         FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();bottle.Dispose();poop.Dispose();if(frame!=null)frame.Dispose();};
     }
     void Save(){try{File.WriteAllText(Path.Combine(runtime,"layout.json"),json.Serialize(new{ x=Left,y=Top,scale=scale}));}catch{}}
-    void ResizeScene(double value){scale=Math.Max(.7,Math.Min(2,value));ClientSize=new Size((int)(420*scale),(int)(220*scale));Save();Render();}
-    void Demo(double seconds){particles.Clear();demoSeconds=seconds;demoUntil=Now()+12;working=true;emitting=true;bottles=5;lanes=5;emission=40;status="模拟演示 · 12 秒后恢复真实数据";}
+    void ResizeScene(double value){scale=Math.Max(.7,Math.Min(2,value));ClientSize=new Size((int)(420*scale),(int)(244*scale));Save();Render();}
+    static int BottleCount(double percent){return (int)Math.Ceiling(Math.Max(0,Math.Min(100,percent))/20);}
+    static int DemoLanes(double seconds){return seconds>=3?1:seconds>=1.2?2:3;}
+    void Demo(double seconds,double? quota=null){particles.Clear();demoSeconds=seconds;demoQuota=quota??(demoUntil>Now()?demoQuota:bottles*20);demoUntil=Now()+12;working=true;emitting=true;bottles=BottleCount(demoQuota);lanes=DemoLanes(seconds);motion=0;status="模拟演示 · 12 秒后恢复真实数据";}
+    string Clock(double seconds){try{return new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc).AddSeconds(seconds).ToLocalTime().ToString("HH:mm");}catch{return "未知";}}
+    bool QuotaKnown(){return Value("quota_status")=="recorded"&&Number("quota_resets_at")>Now();}
     ContextMenuStrip Popup(){
         // WinForms may still access the dropdown after Closed; keep it alive
         // until the owner window closes instead of disposing in that event.
@@ -109,16 +127,17 @@ class CrocDesktop : Form {
         menu.Items.Add("最近响应缓存命中："+(Value("cache_percent").Length==0?"暂无计数":Number("cache_percent").ToString("0.#")+"%" )).Enabled=false;
         menu.Items.Add("最近响应输入 / 输出："+Value("last_input","—")+" / "+Value("last_output","—")+" Token").Enabled=false;
         menu.Items.Add("其中缓存输入："+Value("cached_input","—")+" Token").Enabled=false;
-        menu.Items.Add("本次投喂：文本约 "+Value("new_input_estimate","未知")+" Token（粗估）"+(Flag("attachments_unknown")?"；附件计量未知":"")).Enabled=false;
+        menu.Items.Add("5 小时剩余："+(QuotaKnown()?Number("quota_remaining").ToString("0.#")+"%":"未知 / 等待更新")).Enabled=false;
+        menu.Items.Add("额度重置："+(Number("quota_resets_at")>0?Clock(Number("quota_resets_at")):"未知")+"（本机时间）").Enabled=false;
+        menu.Items.Add("本地额度记录："+(Number("quota_recorded_at")>0?Clock(Number("quota_recorded_at")/1000):"暂无")).Enabled=false;
+        menu.Items.Add("输出吞吐："+(Value("rate").Length>0?Number("rate").ToString("0.#")+" tok/s（最近响应平均）":"等待计数")).Enabled=false;
         menu.Items.Add(new ToolStripSeparator());
         var design=new ToolStripMenuItem("分级设计与署名");
-        design.DropDownItems.Add("奶瓶 1–5 个：本次消息文本量（粗估）").Enabled=false;
-        design.DropDownItems.Add("投喂分界：100 / 500 / 2千 / 8千 Token").Enabled=false;
-        design.DropDownItems.Add("排除历史上下文；附件仅提示存在，不伪造计数").Enabled=false;
-        design.DropDownItems.Add("便便 1–5 行：本轮累计输出量").Enabled=false;
-        design.DropDownItems.Add("输出分界：500 / 2千 / 5千 / 1.5万 Token").Enabled=false;
-        design.DropDownItems.Add("慢悠悠 <30；匀速 30–79.99；飞快 ≥80 tok/s").Enabled=false;
-        design.DropDownItems.Add("穿过输出区：4 秒 / 2 秒 / 0.8 秒").Enabled=false;
+        design.DropDownItems.Add("奶瓶数量：每瓶约 20% 剩余额度，向上取整").Enabled=false;
+        design.DropDownItems.Add("额度只读本地日志；过重置时间等待新记录").Enabled=false;
+        design.DropDownItems.Add("五档对应 1 / 1 / 2 / 2 / 3 行；从屁股向两侧展开").Enabled=false;
+        design.DropDownItems.Add("五档边界：15 / 30 / 60 / 100 tok/s").Enabled=false;
+        design.DropDownItems.Add("速度和密度连续平滑变化，不按行数表达总量").Enabled=false;
         design.DropDownItems.Add("速率与缓存来自最近完成响应，非瞬时值").Enabled=false;
         design.DropDownItems.Add("交互设计：Hziibepacient").Enabled=false;
         design.DropDownItems.Add("数据基础：drkang7 / Codex Token HUD · MIT").Enabled=false;
@@ -130,7 +149,9 @@ class CrocDesktop : Form {
         var sizes=new ToolStripMenuItem("整体大小（也可滚轮调整）");
         foreach(double size in new[]{.7,1,1.3,1.6,2}){double chosen=size;sizes.DropDownItems.Add((size*100)+"%",null,(s,e)=>ResizeScene(chosen));}menu.Items.Add(sizes);
         var demos=new ToolStripMenuItem("试播动画");
-        demos.DropDownItems.Add("慢悠悠 · 4 秒穿过",null,(s,e)=>Demo(4));demos.DropDownItems.Add("匀速 · 2 秒穿过",null,(s,e)=>Demo(2));demos.DropDownItems.Add("飞快 · 0.8 秒穿过",null,(s,e)=>Demo(.8));menu.Items.Add(demos);
+        foreach(double t in new[]{4.0,3.0,2.0,1.2,.7}){double chosenSeconds=t;demos.DropDownItems.Add("第 "+(demos.DropDownItems.Count+1)+" 档 · "+t+" 秒穿过",null,(s,e)=>Demo(chosenSeconds));}menu.Items.Add(demos);
+        var quotas=new ToolStripMenuItem("试播奶瓶额度");
+        foreach(double q in new[]{100,75,50,20,0}){double selectedQuota=q;quotas.DropDownItems.Add(q+"%",null,(s,e)=>{Demo(2,selectedQuota);});}menu.Items.Add(quotas);
         menu.Items.Add("模拟结束 / 恢复真实数据",null,(s,e)=>{demoUntil=0;working=false;emitting=false;lastRead=DateTime.MinValue;Render();});
         var top=new ToolStripMenuItem("始终置顶");top.Checked=TopMost;top.Click+=(s,e)=>{TopMost=!TopMost;};menu.Items.Add(top);
         menu.Items.Add(visibleScene?"隐藏（托盘可恢复）":"显示",null,(s,e)=>{visibleScene=!visibleScene;if(visibleScene)Show();else Hide();});
@@ -139,20 +160,71 @@ class CrocDesktop : Form {
     void Choose(string id){File.WriteAllText(Path.Combine(runtime,"selection.json"),json.Serialize(new{thread_id=id}));particles.Clear();bottles=0;lanes=0;demoUntil=0;lastRun="";}
     void Tick(){
         var now=DateTime.UtcNow;float dt=(float)Math.Min(.05,(now-previous).TotalSeconds);previous=now;
-        if((now-lastRead).TotalSeconds>.35){lastRead=now;try{state=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"scene.json")));}catch{}}
+        if((now-lastRead).TotalSeconds>.09){lastRead=now;try{state=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"scene.json")));}catch{}}
         double seconds=demoSeconds;
-        if(demoUntil>Now()) {working=true;emitting=true;bottles=5;lanes=5;}
+        if(demoUntil>Now()) {working=true;emitting=true;bottles=BottleCount(demoQuota);lanes=DemoLanes(demoSeconds);}
         else {
             bool fresh=Now()-Number("updated")<5;
-            string run=Value("selected")+"/"+Value("run");if(lastRun!=run){particles.Clear();bottles=0;emission=0;lastRun=run;}
+            string run=Value("selected")+"/"+Value("run");if(lastRun!=run){particles.Clear();lanes=0;lastRun=run;}
             working=fresh&&Flag("working");emitting=fresh&&Flag("emitting");seconds=Number("seconds");
-            if(working)bottles=(int)Number("bottles");lanes=(int)Number("lanes");status=fresh?Value("status"):"数据连接暂停 · 休息一下";
+            bottles=QuotaKnown()?BottleCount(Number("quota_remaining")):0;
+            int targetLanes=emitting?(int)Number("lanes"):0;
+            if(targetLanes==0||lanes==0){lanes=targetLanes;pendingLanes=targetLanes;}
+            else if(targetLanes!=lanes){if(pendingLanes!=targetLanes){pendingLanes=targetLanes;laneChangeAt=Now();}else if(Now()-laneChangeAt>.6)lanes=targetLanes;}
+            else pendingLanes=lanes;
+            status=fresh?Value("status"):"数据连接暂停 · 休息一下";
         }
-        float end=408,speed=seconds>0?(end-250)/(float)seconds:0;
-        if(emitting&&speed>0&&lanes>0){emission+=speed*dt;while(emission>=31){emission-=31;for(int lane=0;lane<Math.Min(5,lanes);lane++){int row=LaneOrder[lane];float start=RowStart(row);particles.Add(new Particle{X=start,Y=RowY(row),Speed=(end-start)/(float)seconds,Row=row});}}}
-        foreach(var p in particles){p.X+=(emitting&&seconds>0?(end-RowStart(p.Row))/(float)seconds:p.Speed)*dt;}particles.RemoveAll(p=>p.X>end);
-        if(!working&&particles.Count==0)bottles=0;
+        float end=408,blend=1-(float)Math.Exp(-dt/.3);
+        float target=emitting&&seconds>0?1/(float)seconds:0;
+        motion+=(target-motion)*blend;
+        float spacing=demoUntil>Now()?(float)Math.Max(25,Math.Min(70,demoSeconds*15+10)):(float)Number("spacing",70);
+        smoothSpacing+=(spacing-smoothSpacing)*blend;
+        for(int lane=0;lane<lanes;lane++){
+            int row=LaneOrder[lane];float start=RowStart(row),speed=(end-start)*motion;
+            if(emitting&&speed>0){laneEmission[lane]+=speed*dt/Math.Max(17,smoothSpacing);while(laneEmission[lane]>=1){laneEmission[lane]-=1;particles.Add(new Particle{X=start,Y=RowY(row),Speed=speed,Row=row,Phase=lane*1.7f});}}
+        }
+        foreach(var p in particles){p.Age+=dt;float desired=emitting?(end-RowStart(p.Row))*motion:p.Speed;p.Speed+=(desired-p.Speed)*blend;p.X+=p.Speed*dt;p.Y=RowY(p.Row)+(float)Math.Sin(p.Age*5+p.Phase)*.7f;}
+        particles.RemoveAll(p=>p.X>end+12);
         if(visibleScene&&!dragging)Render();
+    }
+    static GraphicsPath RoundedRect(float x,float y,float w,float h,float radius){
+        var path=new GraphicsPath();float d=radius*2;
+        path.AddArc(x,y,d,d,180,90);path.AddArc(x+w-d,y,d,d,270,90);
+        path.AddArc(x+w-d,y+h-d,d,d,0,90);path.AddArc(x,y+h-d,d,d,90,90);path.CloseFigure();return path;
+    }
+    string[] BarValues(){
+        return new[]{QuotaKnown()?Number("quota_remaining").ToString("0.#")+"%":"待更新",
+            Number("quota_resets_at")>0?Clock(Number("quota_resets_at")):"—",
+            Value("rate").Length>0?Number("rate").ToString("0.#")+" tok/s":"—"};
+    }
+    void DrawDataBar(Graphics g){
+        const float x=80,y=202,w=260,h=30;
+        using(var shadow=RoundedRect(x,y+1,w,h,5))
+        using(var shadowBrush=new SolidBrush(Color.FromArgb(16,48,42,32)))g.FillPath(shadowBrush,shadow);
+        using(var shape=RoundedRect(x,y,w,h,5))
+        using(var fill=new SolidBrush(Color.FromArgb(245,250,248,242)))
+        using(var border=new Pen(Color.FromArgb(180,193,187,177),.8f)){
+            g.FillPath(fill,shape);g.DrawPath(border,shape);
+        }
+        float[] widths={60,70,130};
+        using(var divider=new Pen(Color.FromArgb(85,193,187,177),.7f)){
+            g.DrawLine(divider,x+60,y+8,x+60,y+h-8);
+            g.DrawLine(divider,x+130,y+8,x+130,y+h-8);
+        }
+        var values=BarValues();float left=x;
+        using(var valueBrush=new SolidBrush(Color.FromArgb(58,59,56)))
+        using(var format=new StringFormat(StringFormat.GenericTypographic){Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center,FormatFlags=StringFormatFlags.NoWrap}){
+            for(int i=0;i<3;i++){
+                float size=15;
+                // Fit the entire value, including tok/s, before drawing; never truncate the unit.
+                while(size>9){using(var candidate=new Font("Microsoft YaHei UI",size,FontStyle.Bold,GraphicsUnit.Pixel)){
+                    if(g.MeasureString(values[i],candidate,1000,format).Width<=widths[i]-12)break;
+                }size-=.5f;}
+                using(var font=new Font("Microsoft YaHei UI",size,FontStyle.Bold,GraphicsUnit.Pixel))
+                    g.DrawString(values[i],font,valueBrush,new RectangleF(left+6,y,widths[i]-12,h),format);
+                left+=widths[i];
+            }
+        }
     }
     void Render(){
         if(!loaded||Width<1||Height<1)return;
@@ -162,9 +234,9 @@ class CrocDesktop : Form {
             Image sprite=working?work:rest;
             float bob=working?(float)Math.Sin(Now()*5)*1.1f:0;
             // Five stable staggered slots, all inside the crocodile's head/foot height.
-            float[,] slots={{0,94,.08f},{0,130,-.12f},{0,166,-.08f},{23,76,.1f},{27,151,.06f}};
+            float[,] slots={{125,84,.28f},{132,114,-.12f},{110,136,.06f},{149,150,-.05f},{118,174,.14f}};
             for(int i=0;i<Math.Min(5,bottles);i++){
-                var saved=g.Save();g.TranslateTransform(FrontEdge(slots[i,1])-15-slots[i,0],slots[i,1]);g.RotateTransform(slots[i,2]*180/(float)Math.PI);
+                var saved=g.Save();g.TranslateTransform(slots[i,0],slots[i,1]);g.RotateTransform(slots[i,2]*180/(float)Math.PI);
                 g.DrawImage(bottle,new RectangleF(-10,-22,20,30),new RectangleF(274,111,706,1038),GraphicsUnit.Pixel);g.Restore(saved);
             }
             // Soft connecting wakes and travelling dashes keep sparse particles
@@ -201,9 +273,17 @@ class CrocDesktop : Form {
                     }
                 }
             }
-            foreach(var p in particles)g.DrawImage(poop,new RectangleF(p.X-10,p.Y-6,20,12),new RectangleF(337,365,770,478),GraphicsUnit.Pixel);
+            foreach(var p in particles){
+                float fade=Math.Max(0,Math.Min(1,(420-p.X)/20));
+                using(var attr=new ImageAttributes()){
+                    var alpha=new ColorMatrix();alpha.Matrix33=fade;attr.SetColorMatrix(alpha);
+                    g.DrawImage(poop,new Rectangle((int)p.X-10,(int)p.Y-6,20,12),337,365,770,478,GraphicsUnit.Pixel,attr);
+                }
+            }
             // Paint the character last so new particles emerge from behind it.
             g.DrawImage(sprite,new RectangleF(125,35+bob,164,164));
+            DrawDataBar(g);
+
         }
         IntPtr screen=GetDC(IntPtr.Zero),dc=CreateCompatibleDC(screen),bitmap=image.GetHbitmap(Color.FromArgb(0)),old=SelectObject(dc,bitmap);
         try{var pos=new PointNative(Left,Top);var size=new SizeNative(Width,Height);var source=new PointNative(0,0);var blend=new Blend{Op=0,Flags=0,Alpha=255,Format=1};if(!UpdateLayeredWindow(Handle,screen,ref pos,ref size,dc,ref source,0,ref blend,2))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());}

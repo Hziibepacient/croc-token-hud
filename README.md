@@ -1,16 +1,19 @@
 # Croc Token HUD · 鳄鱼 Token 可视化
 
-透明桌面鳄鱼：奶瓶表示本次消息文本量（粗估），便便行数表示本轮输出量，流动速度表示输出速率。
+奶瓶数量表示五小时剩余额度，便便的行数、密度和流动速度表示最近响应平均输出吞吐。窗口下方显示剩余百分比、重置时间及完整 `tok/s` 单位。
 
-动画交互设计与改版：**Hziibepacient**。基于 **drkang7/codex-token-hud**，保留原作者版权及 MIT 许可证。
+交互设计与改版：**Hziibepacient**。基于 **drkang7/codex-token-hud**，保留原作者版权及 MIT 许可证。
 
-**Windows 桌面版：双击 StartCrocDesktop.cmd。浏览器调试版：双击 StartCroc.cmd。**
+**Windows 桌面版：解压后双击 `StartCrocDesktop.cmd`。需要 Python 3.10+ 和 Windows .NET Framework 4.x，首次运行自动编译。**
 
-需要 Python 3.10+；桌面版使用 Windows .NET Framework 4.x，首次运行自动编译，无需安装第三方 Python 包。
+[下载源码 ZIP](https://github.com/Hziibepacient/croc-token-hud/archive/refs/heads/main.zip) · [使用说明、数据限制和署名](CROC_README.md)
 
-拖动鳄鱼移动，右键查看模型、缓存与分级说明，选择对话、缩放或退出。默认跟随最新活动，可在右键中固定对话。素材已随源码提供。
+- 额度只读取本地日志，不联网、不提取登录凭据。没有新记录时不会伪造服务器最新余额。
+- 五档输出吞吐以 15 / 30 / 60 / 100 tok/s 为边界，对应 1 / 1 / 2 / 2 / 3 行，速度及密度平滑变化；恢复连接尾迹和移动速度线。
+- 休息与工作切换保留奶瓶数量；右键试播只改变动画，除非明确选择模拟额度。
+- 小底栏无标题、无进度条，可供其他角色复用；拖动角色移动，右键选择对话、缩放及退出。
+- 浏览器调试版：双击 `StartCroc.cmd`。完整素材随源码提供。
 
-[中文版使用说明、数据限制和署名](CROC_README.md)
 
 ---
 
