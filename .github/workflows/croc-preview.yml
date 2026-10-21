@@ -1,0 +1,60 @@
+name: Crocodile desktop preview recording
+on:
+  workflow_dispatch:
+    inputs:
+      before:
+        description: Commit to record for comparison
+        default: 46f8368
+  push:
+    branches: ['croc-*']
+    paths: ['CrocDesktop.cs', 'web/assets/**', 'tests/CrocPreview.cs', '.github/workflows/croc-preview.yml']
+permissions:
+  contents: read
+jobs:
+  record:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Build current, comparison and recorder
+        shell: powershell
+        run: |
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          $before = '${{ github.event.inputs.before }}'; if (-not $before) { $before = '46f8368' }
+          git worktree add build\before $before
+          $refs = '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.Web.Extensions.dll'
+          & $csc /nologo /target:winexe /optimize+ /out:build\after.exe @refs CrocDesktop.cs; if ($LASTEXITCODE) { exit 1 }
+          & $csc /nologo /target:winexe /optimize+ /out:build\before.exe @refs build\before\CrocDesktop.cs; if ($LASTEXITCODE) { exit 1 }
+          & $csc /nologo /target:exe /optimize+ /out:build\CrocPreview.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll tests\CrocPreview.cs; if ($LASTEXITCODE) { exit 1 }
+      - name: Smoke-test the current build
+        shell: powershell
+        run: |
+          $runtime = Join-Path (Get-Location).Path 'build\croc-smoke'
+          New-Item -ItemType Directory -Force $runtime | Out-Null
+          $process = Start-Process build\after.exe -ArgumentList @((Get-Location).Path, $runtime, '--demo', '--smoke') -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Crocodile smoke test timed out' }
+          $result = Get-Content (Join-Path $runtime 'smoke-result.json') -Raw | ConvertFrom-Json
+          if ($result.error) { throw $result.error }
+          $result | Format-List
+      - name: Record both builds on the runner desktop
+        shell: powershell
+        run: |
+          $root = (Get-Location).Path
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::PrimaryScreen.Bounds | Format-List
+          foreach ($name in 'before', 'after') {
+            $project = if ($name -eq 'before') { "$root\build\before" } else { $root }
+            $process = Start-Process build\CrocPreview.exe -ArgumentList @("build\$name.exe", "`"$project`"", "build\runtime-$name", "build\frames\$name", '1.8', '24') -PassThru -NoNewWindow
+            if (-not $process.WaitForExit(120000)) { $process.Kill(); throw "$name recording timed out" }
+            Get-Content "build\frames\$name\metrics.json"
+            Get-ChildItem "build\runtime-$name" -Filter '*error*' | ForEach-Object { Get-Content $_.FullName }
+          }
+          Copy-Item build\croc-smoke\*.png build\frames\
+          Compress-Archive build\frames\* build\croc-preview-frames.zip
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: croc-preview-frames
+          path: build/croc-preview-frames.zip
+          retention-days: 7
