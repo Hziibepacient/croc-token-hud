@@ -14,7 +14,7 @@ def main():
              'web/croc.js', 'croc_scene.py', 'web/index.html', 'web/app.js', 'web/style.css',
              'web/assets/croc-rest.png', 'web/assets/croc-work.png',
              'web/assets/bottle.png', 'web/assets/poop.png', 'BuildCrocSprites.py',
-             'web/assets/desktop/rest.png', 'web/assets/desktop/work.png',
+             'web/assets/desktop/rest.png', 'web/assets/desktop/work.png', 'web/assets/desktop/poses.png',
              'web/assets/desktop/bottle.png', 'web/assets/desktop/bottle-empty.png']
     for name in files:
         if not (root / name).is_file():

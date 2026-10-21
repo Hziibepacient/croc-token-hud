@@ -1,18 +1,19 @@
-"""Build the desktop crocodile's 2.5D frame strips from the original artwork.
+"""Build the desktop crocodile's frame strips in web/assets/desktop/.
 
 Offline asset tool, not needed at runtime: requires Pillow, NumPy and SciPy
-(`python -m pip install pillow numpy scipy`). It reads the four flat drawings
-in web/assets/ and writes web/assets/desktop/:
+(`python -m pip install pillow numpy scipy`).
 
-- rest.png: idle pose; frame 0 neutral, frames 1..N a nose-picking cycle.
-- work.png: working pose with the tail swept from down to up.
-- bottle.png / bottle-empty.png: the bottle with the same lighting, full and
-  with its milk replaced by pale glass (for the partly drunk bottle).
+Sources (web/assets/desktop/source/) are eight 2.5D key poses of the original
+character - rest (nose picking), crouch, work, recoil, relief, think, drink and
+jump - cut out of AI-assisted pose sheets that used the author's drawings as
+the reference. Every pose is placed on one square canvas with its feet on a
+shared ground point, so poses swap without the body jumping. Outputs:
 
-Each frame is warped from the original drawing (so the character stays the
-author's) and then lit as a soft 2.5D volume: a key light from the top left,
-a two-tone core shadow, a glossy highlight and a faint rim on the back edge.
-The ink lines are left untouched.
+- rest.png: rest pose; frame 0 neutral, frames 1..N a warped nose-pick cycle.
+- work.png: work pose with the tail swept from down to up (TAIL degrees).
+- poses.png: crouch, recoil, relief, think, drink, jump (POSES order).
+- bottle.png / bottle-empty.png: the floating bottle, lit to match, full and
+  with the milk replaced by pale glass.
 """
 from pathlib import Path
 import math
@@ -22,14 +23,21 @@ from PIL import Image
 from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parent
-SOURCE = ROOT / 'web' / 'assets'
-TARGET = SOURCE / 'desktop'
-FRAME = 360  # Square frame size; the window draws at most 328 px.
-
-# Nose picking: (lift px, finger twist degrees) per frame, at 512 px source scale.
+ASSETS = ROOT / 'web' / 'assets'
+TARGET = ASSETS / 'desktop'
+SOURCE = TARGET / 'source'
+CANVAS = 560             # Square canvas in source pixels.
+FEET = (330, 530)        # Where every grounded pose's feet land on the canvas.
+JUMP_LIFT = 36           # The jump pose floats this far above the ground.
+FRAME = 416              # Output frame size; the window draws at most ~414 px.
+POSES = ['crouch', 'recoil', 'relief', 'think', 'drink', 'jump']
+# Nose picking on the rest pose: (lift px, finger twist degrees) per frame.
 PICK = [(0, 0), (-3, -2), (-6, -4), (-8, -5), (-5, -2), (-7, -4), (-3, -1), (3, 3), (6, 5), (2, 2)]
 # Tail sweep in degrees, negative = down. Frame index TAIL.index(0) is neutral.
 TAIL = [-8, -4, 0, 4, 8, 12, 16, 20]
+# Rest-pose hand and wrist, work-pose tail base and the tail's bend region, in source pixels.
+HAND, WRIST, HAND_SIGMA = (222, 192), (248, 246), 30
+TAIL_BASE, TAIL_X, TAIL_Y, FEET_TOP = (338, 318), (318, 410), (226, 262), (335, 360)
 
 
 def smooth(e0, e1, x):
@@ -37,8 +45,25 @@ def smooth(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
-def load(name):
-    return np.asarray(Image.open(SOURCE / name).convert('RGBA')).astype(np.float32) / 255
+def load(path):
+    return np.asarray(Image.open(path).convert('RGBA')).astype(np.float32) / 255
+
+
+def placed(name):
+    """The pose on the shared canvas, feet on FEET, and the offset applied."""
+    pose = load(SOURCE / (name + '.png'))
+    alpha = pose[..., 3] > .5
+    ys, xs = np.nonzero(alpha)
+    bottom = ys.max()
+    feet_x = xs[ys > bottom - 8].mean()
+    dx = int(round(FEET[0] - feet_x))
+    dy = int(round(FEET[1] - bottom - (JUMP_LIFT if name == 'jump' else 0)))
+    canvas = np.zeros((CANVAS, CANVAS, 4), np.float32)
+    h, w = pose.shape[:2]
+    y0, x0 = max(0, dy), max(0, dx)
+    y1, x1 = min(CANVAS, dy + h), min(CANVAS, dx + w)
+    canvas[y0:y1, x0:x1] = pose[y0 - dy:y1 - dy, x0 - dx:x1 - dx]
+    return canvas, (dx, dy)
 
 
 def warp(image, field):
@@ -65,7 +90,8 @@ def rotation_field(cx, cy, degrees, weight, shift=(0, 0)):
     return field
 
 
-def light(image, big=34, small=6, k=60.0, key=(-0.6, -0.8, 0.55), band=(.27, .48)):
+def light(image, big=20, small=5, k=40.0, key=(-0.6, -0.8, 0.55), band=(.27, .48)):
+    """Soft 2.5D lighting for the flat bottle drawing, matching the poses."""
     rgb, a = image[..., :3], image[..., 3]
     lum = rgb @ np.array([.299, .587, .114], np.float32)
     solid = a > .5
@@ -88,9 +114,6 @@ def light(image, big=34, small=6, k=60.0, key=(-0.6, -0.8, 0.55), band=(.27, .48
     half = lv + np.array([0, 0, 1], np.float32)
     half /= np.linalg.norm(half)
     col += (.30 * smooth(.90, .97, np.clip(n @ half, 0, 1)))[..., None]
-    rim_dir = np.array([.75, .35, .2], np.float32) / np.linalg.norm([.75, .35, .2])
-    edge = np.clip((1 - ndimage.gaussian_filter(solid.astype(np.float32), 3 * s)) * 3, 0, 1)
-    col += (.10 * smooth(.55, .8, np.clip(n @ rim_dir, 0, 1)) * edge)[..., None]
     col *= (1 - .06 * ndimage.gaussian_filter(ink.astype(np.float32), 2.5 * s))[..., None]
     out = image.copy()
     out[..., :3] = np.where(fill[..., None], np.clip(col, 0, 1), rgb)
@@ -98,51 +121,41 @@ def light(image, big=34, small=6, k=60.0, key=(-0.6, -0.8, 0.55), band=(.27, .48
 
 
 def to_frame(image, size=FRAME):
-    """Resize onto a square canvas, keeping the drawing's own aspect as the window does."""
-    pil = Image.fromarray((image * 255 + .5).astype(np.uint8), 'RGBA')
-    return pil.resize((size, size), Image.LANCZOS)
+    return Image.fromarray((image * 255 + .5).astype(np.uint8), 'RGBA').resize((size, size), Image.LANCZOS)
 
 
-def strip(frames):
+def strip(frames, name):
     sheet = Image.new('RGBA', (FRAME * len(frames), FRAME))
     for i, frame in enumerate(frames):
         sheet.paste(frame, (i * FRAME, 0))
-    return sheet
+    sheet.save(TARGET / name, optimize=True)
 
 
 def main():
-    TARGET.mkdir(exist_ok=True)
-    rest = load('croc-rest.png')
-    h, w = rest.shape[:2]
-    sx, sy = w / 512, h / 512
-    # The hand at the nostril, pivoting at the wrist.
-    hand = (265 * sx, 262 * sy)
-    wrist = (300 * sx, 330 * sy)
-    sigma = 46 * sx
-    hand_weight = lambda xx, yy: np.exp(-((xx - hand[0]) ** 2 + (yy - hand[1]) ** 2) / (2 * sigma ** 2))
-    rest_frames = [to_frame(light(warp(rest, rotation_field(wrist[0], wrist[1], twist, hand_weight, (0, lift * sy)))))
-                   for lift, twist in PICK]
-    strip(rest_frames).save(TARGET / 'rest.png', optimize=True)
+    rest, (dx, dy) = placed('rest')
+    hand = (HAND[0] + dx, HAND[1] + dy)
+    wrist = (WRIST[0] + dx, WRIST[1] + dy)
+    near_hand = lambda xx, yy: np.exp(-((xx - hand[0]) ** 2 + (yy - hand[1]) ** 2) / (2 * HAND_SIGMA ** 2))
+    strip([to_frame(warp(rest, rotation_field(wrist[0], wrist[1], twist, near_hand, (0, lift)))) for lift, twist in PICK], 'rest.png')
 
-    work = load('croc-work.png')
-    h, w = work.shape[:2]
-    sx, sy = w / 512, h / 512
-    base = (372 * sx, 392 * sy)
-    # Bend progressively from the tail base outwards; the body stays put.
-    tail_weight = lambda xx, yy: smooth(352 * sx, 452 * sx, xx) * smooth(300 * sy, 345 * sy, yy)
-    work_frames = [to_frame(light(warp(work, rotation_field(base[0], base[1], -angle, tail_weight)))) for angle in TAIL]
-    strip(work_frames).save(TARGET / 'work.png', optimize=True)
+    work, (dx, dy) = placed('work')
+    base = (TAIL_BASE[0] + dx, TAIL_BASE[1] + dy)
+    # Bend from the tail base outwards; the body and the feet below it stay put.
+    tail = lambda xx, yy: (smooth(TAIL_X[0] + dx, TAIL_X[1] + dx, xx) * smooth(TAIL_Y[0] + dy, TAIL_Y[1] + dy, yy)
+                           * (1 - smooth(FEET_TOP[0] + dy, FEET_TOP[1] + dy, yy)))
+    strip([to_frame(warp(work, rotation_field(base[0], base[1], -angle, tail))) for angle in TAIL], 'work.png')
 
-    bottle = load('bottle.png')
+    strip([to_frame(placed(name)[0]) for name in POSES], 'poses.png')
+
+    bottle = load(ASSETS / 'bottle.png')
     rgb, a = bottle[..., :3], bottle[..., 3]
     rows = np.arange(bottle.shape[0])[:, None] > bottle.shape[0] * .5
     milk = (a > .8) & rows & (rgb[..., 0] > .92) & (rgb[..., 1] > .92) & (rgb[..., 2] > .84) & (rgb[..., 2] <= .98)
     empty = bottle.copy()
     empty[milk] = [.894, .957, .969, .61]
     for name, image in (('bottle.png', bottle), ('bottle-empty.png', empty)):
-        lit = light(image, big=20, small=5, k=40.0)
-        Image.fromarray((lit * 255 + .5).astype(np.uint8), 'RGBA').save(TARGET / name, optimize=True)
-    print('rest', len(PICK), 'work', len(TAIL), 'frames of', FRAME, 'px ->', TARGET)
+        Image.fromarray((light(image) * 255 + .5).astype(np.uint8), 'RGBA').save(TARGET / name, optimize=True)
+    print('rest', len(PICK), 'work', len(TAIL), 'poses', len(POSES), 'frames of', FRAME, 'px ->', TARGET)
 
 
 if __name__ == '__main__':

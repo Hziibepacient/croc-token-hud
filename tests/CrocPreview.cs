@@ -35,7 +35,7 @@ static class CrocPreview {
     static string Scene(double t) {
         string stage = t < 3 ? "idle" : t < 5 ? "tools" : t < 17 ? "generating" : t < 19 ? "tools" : "idle";
         double rate = t < 5 ? 0 : t < 8 ? 10 : t < 11 ? 40 : 140;
-        double quota = t < 15 ? 54 : 38;
+        double quota = t < 17.6 ? 54 : 38; // Drops while tools run, after the stream.
         bool emitting = stage == "generating" && rate > 0;
         int tier = rate <= 0 ? 0 : 1 + (rate >= 15 ? 1 : 0) + (rate >= 30 ? 1 : 0) + (rate >= 60 ? 1 : 0) + (rate >= 100 ? 1 : 0);
         int lanes = new[]{0,1,1,2,2,3}[tier];

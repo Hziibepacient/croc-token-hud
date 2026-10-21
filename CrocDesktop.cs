@@ -32,9 +32,11 @@ class CrocDesktop : Form {
     readonly Timer timer=new Timer();
     readonly ContextMenuStrip contextMenu=new ContextMenuStrip();
     // Frame strips built by BuildCrocSprites.py from the original drawings.
-    Image rest,work,bottle,bottleEmpty;
+    Image rest,work,poses,bottle,bottleEmpty;
     // Sprites pre-resampled once per scale, so each frame copies small bitmaps.
-    Bitmap[] restFrames=new Bitmap[0],workFrames=new Bitmap[0];
+    Bitmap[] restFrames=new Bitmap[0],workFrames=new Bitmap[0],poseFrames=new Bitmap[0];
+    // poses.png order, matching BuildCrocSprites.POSES.
+    const int Crouch=0, Recoil=1, Relief=2, Think=3, Drink=4, Jump=5;
     Bitmap bottleScaled,bottleEmptyScaled,poopScaled;
     double spriteScale=0;
     readonly string[] barText=new string[3];
@@ -58,25 +60,28 @@ class CrocDesktop : Form {
     DateTime previous=DateTime.UtcNow, lastRead=DateTime.MinValue;
     // Animation state, all advanced by Animate(dt) on the scene clock.
     double clock=0, poseSwitchAt=-10, lastRender=-1, nextBlink=1.8, blinkStart=-10, nextDrop=0, nextPick=3, pickStart=-10, lastPuff=-1;
-    bool doubleBlink=false, landed=true;
+    // Short-lived key poses: recoil after a single shot, relief after a stream, drinking when quota drops.
+    double recoilPoseUntil=-1, reliefUntil=-1, drinkUntil=-1;
+    bool doubleBlink=false, landed=true, wasEmitting=false, restShown=true;
+    float lastQuota=-1;
     int pickLoops=1;
     // Springs: recoil (px, negative toward the snout), tail sweep (degrees),
     // the bottles' lagging follow of the head (px) and their own tilt.
     float recoil=0, recoilVel=0, tail=0, tailVel=0, follow=0, followVel=0, hopY=0;
     readonly float[] bottleTilt=new float[5], bottleTiltVel=new float[5];
-    float workBlend=0, squash=0, squashVel=0, lean=0, effort=0, toolsBlend=0, quotaPercent=0, fillShown=1;
+    float squash=0, squashVel=0, lean=0, effort=0, toolsBlend=0, quotaPercent=0, fillShown=1;
     readonly float[] bottleScale=new float[5], bottleVel=new float[5];
     readonly Random random=new Random();
     class Particle { public float X,Y,TargetY,Speed,Age,Hop; public int Index; }
     class Drop { public float X,Y,VX,VY,Age; }
     class Puff { public float X,Y,Age,Size; }
     // Scene geometry in the 420 x 244 logical canvas.
-    // The work drawing stands 5.5 px higher than the rest drawing; WorkDrop puts both on the same ground.
-    const float SpriteX=125, SpriteY=35, SpriteSize=164, PivotX=207, PivotY=185, WorkDrop=5.5f;
-    const float ButtX=232, ButtY=145, EndX=408, PoopW=18, PoopH=15;
-    static readonly float[] LaneY={145,121,169}; // Butt height first, then fanned above and below.
+    // Every frame shares one square canvas whose feet point (59%, 95%) sits on PivotX, PivotY.
+    const float SpriteX=84.43f, SpriteY=-11.86f, SpriteSize=208, PivotX=207, PivotY=185;
+    const float ButtX=238, ButtY=138, EndX=408, PoopW=18, PoopH=15;
+    static readonly float[] LaneY={138,114,162}; // Butt height first, then fanned above and below.
     // Eye whites as fractions of the drawing (left, top, right, bottom).
-    static readonly float[,] RestEyes={{.2714f,.1406f,.4571f,.3203f},{.4857f,.1523f,.6776f,.3281f}};
+    static readonly float[,] RestEyes={{.3536f,.2536f,.4964f,.3911f},{.5411f,.2643f,.6839f,.3982f}};
         // Tail sweep of each work.png frame, matching BuildCrocSprites.TAIL.
     static readonly float[] TailAngles={-8,-4,0,4,8,12,16,20};
     static readonly Color Outline=Color.FromArgb(84,104,36), LidTop=Color.FromArgb(206,236,140), LidBottom=Color.FromArgb(160,190,96);
@@ -91,7 +96,7 @@ class CrocDesktop : Form {
         FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;StartPosition=FormStartPosition.Manual;
         Text="Croc Token 桌面鳄鱼";
         string art=Path.Combine(root,"web/assets/desktop");
-        rest=Image.FromFile(Path.Combine(art,"rest.png"));work=Image.FromFile(Path.Combine(art,"work.png"));
+        rest=Image.FromFile(Path.Combine(art,"rest.png"));work=Image.FromFile(Path.Combine(art,"work.png"));poses=Image.FromFile(Path.Combine(art,"poses.png"));
         bottle=Image.FromFile(Path.Combine(art,"bottle.png"));bottleEmpty=Image.FromFile(Path.Combine(art,"bottle-empty.png"));
         var area=Screen.PrimaryScreen.WorkingArea;Location=new Point(area.Right-450,area.Bottom-230);
         try{var saved=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"layout.json")));scale=Convert.ToDouble(saved["scale"]);Location=new Point(Convert.ToInt32(saved["x"]),Convert.ToInt32(saved["y"]));}catch{}
@@ -129,7 +134,7 @@ class CrocDesktop : Form {
                 File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,poopMotion=true,width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
-        FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();bottle.Dispose();bottleEmpty.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
+        FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();poses.Dispose();bottle.Dispose();bottleEmpty.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
     }
     void Save(){try{File.WriteAllText(Path.Combine(runtime,"layout.json"),json.Serialize(new{ x=Left,y=Top,scale=scale}));}catch{}}
     void ResizeScene(double value){scale=Math.Max(.7,Math.Min(2,value));ClientSize=new Size((int)(420*scale),(int)(244*scale));Save();Render(true);}
@@ -176,13 +181,13 @@ class CrocDesktop : Form {
         }
     }
     void DisposeSprites(){
-        foreach(var b in restFrames)b.Dispose();foreach(var b in workFrames)b.Dispose();
+        foreach(var b in restFrames)b.Dispose();foreach(var b in workFrames)b.Dispose();foreach(var b in poseFrames)b.Dispose();
         foreach(var b in new[]{bottleScaled,bottleEmptyScaled,poopScaled})if(b!=null)b.Dispose();
     }
     void EnsureSprites(){
         if(spriteScale==scale)return;
         DisposeSprites();spriteScale=scale;
-        restFrames=Frames(rest,scale);workFrames=Frames(work,scale);
+        restFrames=Frames(rest,scale);workFrames=Frames(work,scale);poseFrames=Frames(poses,scale);
         bottleScaled=Resample(bottle,20,30,scale);bottleEmptyScaled=Resample(bottleEmpty,20,30,scale);
         poopScaled=BuildPoop(scale);
     }
@@ -286,13 +291,20 @@ class CrocDesktop : Form {
         if(working!=wasWorking){
             squashVel+=working?-2.4f:-1.8f;wasWorking=working;poseSwitchAt=clock;landed=false;
             // Back at rest, the finger goes straight back to the nose.
-            if(!working){pickStart=clock+.45;pickLoops=1;nextPick=clock+5+random.NextDouble()*4;}
+            if(!working){pickStart=clock+.6;pickLoops=1;nextPick=clock+5+random.NextDouble()*4;}
         }
+        // A stream ending earns a sigh of relief; starting one is a small brace.
+        if(wasEmitting&&!emitting)reliefUntil=clock+1.3;
+        if(!wasEmitting&&emitting&&clock-poseSwitchAt>.4)squashVel-=1.2f;
+        wasEmitting=emitting;
+        // Milk gone from the bottles: the crocodile was drinking.
+        if(lastQuota>=0&&bottles>0&&quotaPercent<lastQuota-.01f&&!emitting)drinkUntil=clock+1.7;
+        lastQuota=quotaPercent;
         double jump=clock-poseSwitchAt;
         hopY=jump>=.07&&jump<.31?-(working?8:6)*(float)Math.Sin(Math.PI*(jump-.07)/.24):0;
-        if(jump>=.14)workBlend=working?1:0;
         if(!landed&&jump>=.31){landed=true;squashVel-=1.5f;}
-        effort+=((emitting?Clamp01((motion-.2f)/1.4f):0)-effort)*blend;
+        // Effort 0..1 across the speed tiers: about .3 at 40 tok/s, .6 at 80, 1 from 140.
+        effort+=((emitting?Clamp01((motion-.2f)/.8f):0)-effort)*blend;
         lean+=((working?-1.2f-3.4f*effort:0)-lean)*blend;
         toolsBlend+=((working&&!emitting?1:0)-toolsBlend)*(1-(float)Math.Exp(-dt/.15));
         // Every poop is a shot: it leaves fast, and the body, tail and bottles take
@@ -308,6 +320,7 @@ class CrocDesktop : Form {
                 laneEmission[lane]-=1;
                 particles.Add(new Particle{X=ButtX+recoil,Y=ButtY,TargetY=LaneY[lane],Speed=speed*1.9f,Index=particles.Count+lane});
                 recoilVel-=210*kick;tailVel+=220*kick;squashVel-=.9f*kick;
+                if(kick>.55f)recoilPoseUntil=clock+.13;
                 for(int i=0;i<5;i++)bottleTiltVel[i]+=((float)random.NextDouble()*2-1)*55*kick;
                 if(clock-lastPuff>.05){lastPuff=clock;puffs.Add(new Puff{X=ButtX+4+recoil,Y=ButtY-2+(float)random.NextDouble()*4,Size=.8f+.4f*kick});}
             }
@@ -349,13 +362,27 @@ class CrocDesktop : Form {
         double t=clock-blinkStart;
         return Math.Max(Lid(t),doubleBlink&&t>=.22?Lid(t-.22):0);
     }
+    Bitmap Pose(int index){return poseFrames.Length>index?poseFrames[index]:restFrames[0];}
     Bitmap CurrentFrame(){
-        if(workBlend>.5f){
-            int best=0;for(int i=1;i<TailAngles.Length&&i<workFrames.Length;i++)if(Math.Abs(TailAngles[i]-tail)<Math.Abs(TailAngles[best]-tail))best=i;
-            return workFrames[Math.Min(best,workFrames.Length-1)];
+        restShown=false;
+        // Pose changes: crouch, then airborne, then the new pose.
+        double jump=clock-poseSwitchAt;
+        if(jump<.07)return Pose(Crouch);
+        if(jump<.31)return Pose(Jump);
+        if(working){
+            if(emitting){
+                // A full-speed stream holds the straining face; slower shots flash it.
+                if(effort>.75f||clock<recoilPoseUntil)return Pose(Recoil);
+                int best=0;for(int i=1;i<TailAngles.Length&&i<workFrames.Length;i++)if(Math.Abs(TailAngles[i]-tail)<Math.Abs(TailAngles[best]-tail))best=i;
+                return workFrames[Math.Min(best,workFrames.Length-1)];
+            }
+            if(clock<reliefUntil)return Pose(Relief);
+            if(clock<drinkUntil)return Pose(Drink);
+            return Pose(Think);
         }
-        // Starting work pulls the finger out of the nose during the crouch.
-        if(working&&restFrames.Length>8)return restFrames[clock-poseSwitchAt<.07?7:8];
+        if(clock<reliefUntil)return Pose(Relief);
+        if(clock<drinkUntil)return Pose(Drink);
+        restShown=true;
         int cycle=restFrames.Length-1,step=(int)((clock-pickStart)*15);
         return cycle>0&&step>=0&&step<cycle*pickLoops?restFrames[1+step%cycle]:restFrames[0];
     }
@@ -404,7 +431,7 @@ class CrocDesktop : Form {
     void DrawBottles(Graphics g){
         // Five staggered slots in front of the snout; each floats on its own phase,
         // trails the head's lean and recoil, and wobbles when a shot lands.
-        float[,] slots={{117,84,.28f},{124,114,-.12f},{102,136,.06f},{141,150,-.05f},{110,174,.14f}};
+        float[,] slots={{62,82,.28f},{80,110,-.12f},{52,136,.06f},{118,152,-.05f},{86,170,.14f}};
         int last=bottles-1;
         for(int i=0;i<5;i++){
             float s=bottleScale[i];if(s<.02f)continue;
@@ -479,10 +506,10 @@ class CrocDesktop : Form {
         // A steady stream shudders the body slightly.
         float shudder=emitting?(float)Math.Sin(clock*47)*.5f*effort:0;
         g.TranslateTransform(PivotX+recoil+shudder,PivotY+bob+hopY);g.RotateTransform(lean+recoil*.35f);g.ScaleTransform(sx,sy);g.TranslateTransform(-PivotX,-PivotY);
-        var box=new RectangleF(SpriteX,SpriteY+(workBlend>.5f?WorkDrop:0),SpriteSize,SpriteSize);
+        var box=new RectangleF(SpriteX,SpriteY,SpriteSize,SpriteSize);
         g.DrawImage(CurrentFrame(),box);
-        // Only the resting face blinks; the working brows sit over the eye whites.
-        float closure=workBlend>.5f?0:Blink();
+        // Only the resting face blinks; the other poses draw their own eyes.
+        float closure=restShown?Blink():0;
         if(closure>.02f){
             var eyes=RestEyes;
             using(var lid=new Pen(Outline,2.6f)){
