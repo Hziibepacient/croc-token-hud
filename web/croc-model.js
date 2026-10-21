@@ -12,7 +12,8 @@
     const rate = current && Number.isFinite(last.rate) && last.rate > 0 ? last.rate : null;
     return {
       active, idle: sourceOK && m.stage === 'idle',
-      bottles: current ? level(last.input_tokens, [2000, 10000, 30000, 100000]) : 0,
+      new_input_estimate: m.user_input?.text_tokens_estimate ?? null,
+      bottles: level(m.user_input?.text_tokens_estimate, [100, 500, 2000, 8000]) || (m.user_input?.attachments_unknown ? 1 : 0),
       lanes: current ? level(m.turn_output_tokens, [500, 2000, 5000, 15000]) : 0,
       // Compress the broad rate range into legible pixels/second, monotonically.
       speed: rate === null ? 0 : Math.min(300, 12 + 26 * Math.log2(1 + rate / 8)),

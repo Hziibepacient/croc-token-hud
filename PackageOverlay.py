@@ -21,10 +21,12 @@ def main():
     app_dir = work / "app"
     public_web = work / "public-web"
     public_web.mkdir(parents=True, exist_ok=True)
-    (public_web / "local-croc.png").unlink(missing_ok=True)
+    for local_asset in public_web.glob("local-croc*.png"):
+        local_asset.unlink()
     for source in (root / "web").glob("*.*"):
-        if source.name != "local-croc.png":
+        if not source.name.startswith("local-croc"):
             shutil.copy2(source, public_web / source.name)
+    shutil.copytree(root / "web/assets", public_web / "assets", dirs_exist_ok=True)
     command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--name", "CodexTokenHud",
                "--onedir", "--distpath", str(app_dir), "--workpath", str(work / "temp"),
                "--specpath", str(work), "--add-data", str(public_web) + ":web",

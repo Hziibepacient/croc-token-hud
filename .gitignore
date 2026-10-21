@@ -21,3 +21,4 @@ __pycache__/
 .vs/
 .serena/
 web/local-croc.png
+web/local-croc-*.png

@@ -208,7 +208,10 @@ class Handler(BaseHTTPRequestHandler):
                       "/croc.js": ("croc.js", "text/javascript; charset=utf-8"),
                       "/croc-model.js": ("croc-model.js", "text/javascript; charset=utf-8"),
                       "/croc.css": ("croc.css", "text/css; charset=utf-8"),
-                      "/local-croc.png": ("local-croc.png", "image/png"),
+                      "/assets/croc-rest.png": ("assets/croc-rest.png", "image/png"),
+                      "/assets/croc-work.png": ("assets/croc-work.png", "image/png"),
+                      "/assets/poop.png": ("assets/poop.png", "image/png"),
+                      "/assets/bottle.png": ("assets/bottle.png", "image/png"),
                       "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                       "/style.css": ("style.css", "text/css; charset=utf-8")}
             if url.path not in static:

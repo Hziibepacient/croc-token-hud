@@ -9,8 +9,9 @@ def main():
     output = root / 'dist' / 'CrocToken-preview-source.zip'
     output.parent.mkdir(exist_ok=True)
     files = ['croc.py', 'StartCroc.cmd', 'dashboard.py', 'history.py', 'metrics.py',
-             'LICENSE', 'CROC_README.md', 'web/croc.html', 'web/croc.css',
+             'CrocDesktop.cs', 'croc_desktop.py', 'StartCrocDesktop.cmd', 'LICENSE', 'CROC_README.md', 'web/croc.html', 'web/croc.css',
              'web/croc.js', 'web/croc-model.js', 'web/index.html', 'web/app.js', 'web/style.css']
+    files.extend(str(p.relative_to(root)) for p in (root / 'web/assets').glob('*.png'))
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         for name in files:
             archive.write(root / name, 'CrocToken/' + name)

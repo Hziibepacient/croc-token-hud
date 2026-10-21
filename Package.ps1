@@ -23,7 +23,8 @@ $taskFiles = @('croc.py', 'StartCroc.cmd', 'CROC_README.md', 'metrics.py', 'hist
 foreach ($taskFile in $taskFiles) { Copy-Item -LiteralPath (Join-Path $taskRoot $taskFile) -Destination $taskStage }
 Copy-Item -LiteralPath (Join-Path $taskRoot 'docs') -Destination $taskStage -Recurse
 New-Item -ItemType Directory -Path (Join-Path $taskStage 'web') -Force | Out-Null
-Get-ChildItem -LiteralPath (Join-Path $taskRoot 'web') -File | Where-Object { $_.Name -ne 'local-croc.png' } | Copy-Item -Destination (Join-Path $taskStage 'web')
+Get-ChildItem -LiteralPath (Join-Path $taskRoot 'web') -File | Where-Object { $_.Name -notlike 'local-croc*' } | Copy-Item -Destination (Join-Path $taskStage 'web')
+Copy-Item -LiteralPath (Join-Path $taskRoot 'web/assets') -Destination (Join-Path $taskStage 'web/assets') -Recurse
 $taskRuntimeFile = if ($Architecture -eq 'x64') { 'python-runtime.json' } else { "python-runtime-$Architecture.json" }
 $taskRuntimeInfo = Get-Content -LiteralPath (Join-Path $taskRoot $taskRuntimeFile) -Raw | ConvertFrom-Json
 $taskCache = Join-Path $taskRoot 'build\cache'

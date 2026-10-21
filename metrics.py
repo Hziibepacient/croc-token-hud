@@ -6,6 +6,8 @@ import collections
 from contextlib import closing
 import datetime as dt
 import json
+import re
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -46,6 +48,25 @@ def cache_percent(usage: dict) -> float | None:
     return 100 * cached / total
 
 
+def estimate_user_input(text, attachments=False):
+    """Approximate only newly submitted text; never subtract cached context."""
+    if not isinstance(text, str):
+        text = ''
+    if text.strip().startswith(('<environment_context>', '<permissions instructions>', '<collaboration_mode>',
+                                '<user_instructions>', '# AGENTS.md instructions', '<turn_aborted>')):
+        return None
+    text = re.sub(r'<in-app-browser-context\b[^>]*>.*?</in-app-browser-context>', '', text, flags=re.S)
+    attachments = attachments or bool(re.search(r'<image\b|Image attachment: true', text))
+    if '## My request:' in text:
+        text = text.split('## My request:', 1)[1]
+    text = re.sub(r'<image\b[^>]*>.*?</image>', '', text, flags=re.S).strip()
+    han = len(re.findall(r'[\u3400-\u9fff]', text))
+    estimate = han + math.ceil((len(text) - han) / 4)
+    if not estimate and not attachments:
+        return None
+    return {'text_tokens_estimate': estimate, 'attachments_unknown': bool(attachments), 'basis': 'rough_text_estimate'}
+
+
 class Measurements:
     """One thread's samples, with generation timing separated from tool execution."""
 
@@ -69,6 +90,8 @@ class Measurements:
         self.last_usage_at: float = 0
         self.event_at: float = 0
         self.turn_started_at: float | None = None
+        self.user_input = None
+        self.pending_user_input = False
 
     def feed(self, event: dict) -> None:
         kind = event.get("type")
@@ -80,10 +103,22 @@ class Measurements:
             self.event_at = max(self.event_at, at)
         event_type = p.get("type")
 
+        if (kind == 'event_msg' and event_type == 'user_message') or (kind == 'response_item' and event_type == 'message' and p.get('role') == 'user'):
+            content = p.get('content') or []
+            text = p.get('message') if kind == 'event_msg' else '\n'.join(c.get('text', '') for c in content if isinstance(c, dict) and isinstance(c.get('text'), str))
+            attachments = bool(p.get('images') or p.get('local_images')) or any(isinstance(c, dict) and c.get('type') in ('input_image', 'image', 'input_file', 'file') for c in content)
+            derived = estimate_user_input(text, attachments)
+            if derived is not None:
+                self.user_input = derived
+                self.pending_user_input = self.stage == 'idle'
+
         if kind == "turn_context":
             self.model = p.get("model") or self.model
             return
         if kind == "event_msg" and event_type in ("task_started", "turn_started"):
+            if not self.pending_user_input:
+                self.user_input = None
+            self.pending_user_input = False
             self.turn_id = p.get("turn_id")
             self.turn_started_at = at
             self.request_boundary = at
@@ -200,7 +235,7 @@ class Measurements:
         self.request_boundary = at
 
     def snapshot(self) -> dict:
-        return {"model": self.model, "stage": self.stage, "last": self.last,
+        return {"model": self.model, "stage": self.stage, "last": self.last, "user_input": self.user_input,
                 "turn_id": self.turn_id, "turn_output_tokens": self.turn_output,
                 "sample_count": self.sample_count, "output_total": self.output_total,
                 "turn_started_at_ms": self.turn_started_at,

@@ -1,10 +1,14 @@
 # Croc Token HUD · 鳄鱼 Token 可视化
 
-奶瓶表示输入量，便便行数表示输出量，移动速度表示输出速率。
+透明桌面鳄鱼：奶瓶表示本次消息文本量（粗估），便便行数表示本轮输出量，流动速度表示输出速率。
 
 动画交互设计与改版：**Hziibepacient**。基于 **drkang7/codex-token-hud**，保留原作者版权及 MIT 许可证。
 
-**启动：双击 StartCroc.cmd（需要 Python 3.10+），或运行 python croc.py。**
+**Windows 桌面版：双击 StartCrocDesktop.cmd。浏览器调试版：双击 StartCroc.cmd。**
+
+需要 Python 3.10+；桌面版使用 Windows .NET Framework 4.x，首次运行自动编译，无需安装第三方 Python 包。
+
+拖动鳄鱼移动，右键查看模型、缓存与分级说明，选择对话、缩放或退出。默认跟随最新活动，可在右键中固定对话。素材已随源码提供。
 
 [中文版使用说明、数据限制和署名](CROC_README.md)
 

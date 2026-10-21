@@ -3,7 +3,11 @@
   const $ = id => document.getElementById(id), canvas = $('scene'), ctx = canvas.getContext('2d');
   const token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const reference = new Image(); reference.src = '/local-croc.png';
+  const reference = {complete:false,naturalWidth:0};
+  const restingSprite = new Image(); restingSprite.src = '/assets/croc-rest.png';
+  const workingSprite = new Image(); workingSprite.src = '/assets/croc-work.png';
+  const poopSprite = new Image(); poopSprite.src = '/assets/poop.png';
+  const bottleSprite = new Image(); bottleSprite.src = '/assets/bottle.png';
   let selected = '', mode = 'live', state = { active:false, idle:true, bottles:0, lanes:0, speed:0 },
     particles = [], emission = 0, prev = performance.now(), demoEnd = 0, runId = null;
   async function api(path) {
@@ -44,17 +48,27 @@
   $('threads').onchange=()=>{selected=$('threads').value;clear();if(mode==='live')poll();};
   function ellipse(x,y,rx,ry,fill,stroke){ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}}
   function poop(x,y){
+    if(poopSprite.complete&&poopSprite.naturalWidth){ctx.drawImage(poopSprite,337,365,770,478,x-13,y-8,26,16);return;}
     if(reference.complete&&reference.naturalWidth){ctx.drawImage(reference,210,128,26,37,x-8,y-13,18,25);return;}
     ctx.fillStyle='#956039';ctx.beginPath();ctx.moveTo(x-8,y+8);ctx.bezierCurveTo(x-14,y,x-4,y-1,x-5,y-5);ctx.bezierCurveTo(x+3,y-4,x+2,y-11,x+1,y-13);ctx.bezierCurveTo(x+12,y-8,x+3,y-2,x+9,y);ctx.bezierCurveTo(x+15,y+7,x+8,y+10,x-8,y+8);ctx.fill();
   }
   function bottle(x,y){
+    if(bottleSprite.complete&&bottleSprite.naturalWidth){ctx.drawImage(bottleSprite,274,111,706,1038,x-14,y-27,28,41);return;}
     ctx.fillStyle='#e5a46f';ctx.fillRect(x-5,y-24,10,6);ellipse(x,y-26,3,5,'#f4c49a');
     ctx.fillStyle='#d8e8df';ctx.beginPath();ctx.roundRect(x-10,y-18,20,32,5);ctx.fill();
     ctx.fillStyle='#fff5d8';ctx.fillRect(x-7,y-9,14,19);ctx.fillStyle='#85a98f';ctx.fillRect(x-11,y-19,22,5);
   }
   function croc(x,y,size,working,t){
     const bob=working&&!reduced?Math.sin(t*5)*2:0;
-    if(reference.complete&&reference.naturalWidth){ctx.drawImage(reference,57,25,155,171,x-size/2,y-size+bob,size,size*171/155);return;}
+    const sprite = working ? workingSprite : restingSprite;
+    canvas.dataset.pose = working ? 'working' : 'resting';
+    if(sprite.complete&&sprite.naturalWidth){
+      // Both completed sprites share the same size and foot baseline.
+      const height=size*1.18, width=height*sprite.naturalWidth/sprite.naturalHeight;
+      ctx.drawImage(sprite,x-width/2,y-height+bob,width,height);
+      return;
+    }
+    if(working&&reference.complete&&reference.naturalWidth){ctx.drawImage(reference,57,25,155,171,x-size/2,y-size+bob,size,size*171/155);return;}
     ctx.save();ctx.translate(x,y+bob);ctx.scale(size/145,size/145);
     ctx.fillStyle='#78a751';ctx.beginPath();ctx.moveTo(25,-50);ctx.quadraticCurveTo(86,-23,71,-65);ctx.quadraticCurveTo(103,-17,33,-9);ctx.fill();
     ellipse(0,-52,35,48,'#9cc768','#628442');ellipse(1,-43,23,31,'#c8df93');
@@ -78,9 +92,24 @@
     if(state.idle&&!particles.length)state.bottles=0;
     const css=getComputedStyle(document.documentElement),line=css.getPropertyValue('--line').trim();
     ctx.strokeStyle=line;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(16,ground);ctx.lineTo(w-16,ground);ctx.stroke();
-    const left=w*.14;
-    ellipse(left,ground-6,Math.min(54,w*.13),9,'#d8e2d1','#9aaf8c');
-    for(let i=0;i<state.bottles;i++){const col=i%3,row=Math.floor(i/3);bottle(left+(col-1)*Math.min(24,w*.06),ground-27-row*42);}
+    // A stable, loose cluster in front of the snout; quantity changes do not
+    // reshuffle existing bottles or imply that input is moving into the mouth.
+    const bottleRight=middle-size*.57-18;
+    const spread=Math.min(40,Math.max(24,bottleRight-30));
+    const bottleScale=.85*Math.min(1,size/140);
+    // Keep the entire rotated bottle between the visible head and feet.
+    const bottleTop=ground-size*1.04+30*bottleScale;
+    const bottleBottom=ground-size*.18-18*bottleScale;
+    const bottleLayout=[
+      [0,.16,.08],[-.95,.50,-.12],[-.08,.88,-.08],
+      [-.88,0,.10],[-.90,1,.06],
+    ];
+    for(let i=0;i<state.bottles;i++){
+      const [offsetX,offsetY,angle]=bottleLayout[i];
+      ctx.save();
+      ctx.translate(bottleRight+offsetX*spread,bottleTop+offsetY*(bottleBottom-bottleTop));
+      ctx.rotate(angle);ctx.scale(bottleScale,bottleScale);bottle(0,0);ctx.restore();
+    }
     croc(middle,ground-6,size,state.active,now/1000);
     for(const p of particles)poop(p.x,p.y);
     if(reduced&&moving)for(let row=0;row<state.lanes;row++)for(let i=0;i<3;i++)poop(start+15+i*(end-start-20)/3,ground-125+row*24);
