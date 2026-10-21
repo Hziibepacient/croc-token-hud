@@ -6,10 +6,17 @@ from pathlib import Path
 from metrics import timestamp_ms
 
 
+def window_label(minutes):
+    for size, unit in ((10080, '周'), (1440, '天'), (60, '小时')):
+        if minutes % size == 0:
+            return f'{minutes // size} {unit}'
+    return f'{minutes} 分钟'
+
+
 class LocalQuota:
     def __init__(self):
         self.files = {}
-        self.latest = None
+        self.windows = {}
 
     def feed(self, event):
         payload = event.get('payload') or {}
@@ -21,20 +28,26 @@ class LocalQuota:
             return
         for name in ('primary', 'secondary'):
             window = limits.get(name)
-            if not isinstance(window, dict) or window.get('window_minutes') != 300:
+            if not isinstance(window, dict):
                 continue
+            minutes = window.get('window_minutes')
+            if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or not math.isfinite(minutes) or minutes <= 0 or minutes != int(minutes):
+                continue
+            minutes = int(minutes)
             used, reset = window.get('used_percent'), window.get('resets_at')
             if not isinstance(used, (int, float)) or not math.isfinite(used) or not 0 <= used <= 100:
                 continue
             if not isinstance(reset, (int, float)) or not math.isfinite(reset) or reset <= 0:
                 continue
-            if self.latest and at <= self.latest['quota_recorded_at']:
+            previous = self.windows.get(minutes)
+            if previous and at <= previous['quota_recorded_at']:
                 continue
-            self.latest = dict(quota_used=used, quota_remaining=100-used,
+            self.windows[minutes] = dict(quota_used=used, quota_remaining=100-used,
                                quota_resets_at=reset, quota_recorded_at=at,
-                               quota_source='local_log')
+                               quota_source='local_log', quota_window_minutes=minutes,
+                               quota_window_label=window_label(minutes))
 
-    def update(self, paths, now=None):
+    def update(self, paths, now=None, window_minutes=0):
         for item in paths:
             path = Path(item)
             try:
@@ -61,8 +74,25 @@ class LocalQuota:
                 self.files[str(path)] = dict(offset=offset, size=stat.st_size, mtime=stat.st_mtime_ns)
             except OSError:
                 continue
-        if not self.latest:
-            return dict(quota_status='unknown', quota_remaining=None)
-        result = dict(self.latest)
-        result['quota_status'] = 'recorded' if result['quota_resets_at'] > (time.time() if now is None else now) else 'awaiting_reset'
+        return self.snapshot(now=now, window_minutes=window_minutes)
+
+    def snapshot(self, now=None, window_minutes=0):
+        now = time.time() if now is None else now
+        selected = window_minutes if isinstance(window_minutes, int) and not isinstance(window_minutes, bool) and window_minutes > 0 else 0
+        options = []
+        for minutes, value in sorted(self.windows.items()):
+            option = dict(value)
+            option['quota_status'] = 'recorded' if option['quota_resets_at'] > now else 'awaiting_reset'
+            options.append(option)
+        effective = selected
+        if not effective and options:
+            active = [o['quota_window_minutes'] for o in options if o['quota_status'] == 'recorded']
+            choices = active or [o['quota_window_minutes'] for o in options]
+            effective = 300 if 300 in choices else min(choices)
+        result = next((dict(o) for o in options if o['quota_window_minutes'] == effective), None)
+        if result is None:
+            result = dict(quota_status='unknown', quota_remaining=None,
+                          quota_window_minutes=selected or None,
+                          quota_window_label=window_label(selected) if selected else '额度')
+        result.update(quota_windows=options, quota_selection_minutes=selected)
         return result

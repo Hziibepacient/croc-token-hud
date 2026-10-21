@@ -64,6 +64,7 @@ class CrocDesktop : Form {
     double recoilPoseUntil=-1, reliefUntil=-1, drinkUntil=-1;
     bool doubleBlink=false, landed=true, wasEmitting=false, restShown=true;
     float lastQuota=-1;
+    string lastQuotaWindow="";
     int pickLoops=1;
     // Springs: recoil (px, negative toward the snout), tail sweep (degrees),
     // the bottles' lagging follow of the head (px) and their own tilt.
@@ -131,7 +132,31 @@ class CrocDesktop : Form {
                 state["model"]="smoke-model";state["cache_percent"]=80;
                 for(int i=0;i<8;i++){var testMenu=Popup();testMenu.Show(PointToScreen(new Point(30,30)));Application.DoEvents();testMenu.Close();Application.DoEvents();if(testMenu.IsDisposed)throw new Exception("Context menu disposed while handling messages");}
                 if(!contextMenu.Items[2].Text.Contains("smoke-model")||!contextMenu.Items[3].Text.Contains("80"))throw new Exception("Model/cache menu fields missing");
-                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,cacheInDataBar=true,poopMotion=true,width=Width,height=Height}));
+                state["quota_windows"]=new object[]{
+                    new Dictionary<string,object>{{"quota_window_minutes",300},{"quota_window_label","5 小时"},{"quota_status","recorded"},{"quota_remaining",54}},
+                    new Dictionary<string,object>{{"quota_window_minutes",10080},{"quota_window_label","1 周"},{"quota_status","recorded"},{"quota_remaining",30}}};
+                var periodMenu=QuotaMenu();
+                if(periodMenu.DropDownItems.Count!=3)throw new Exception("Quota period menu missing windows");
+                ((ToolStripMenuItem)periodMenu.DropDownItems[2]).PerformClick();
+                var preference=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"quota-selection.json")));
+                if(Convert.ToInt32(preference["window_minutes"])!=10080)throw new Exception("Quota period selection was not saved");
+                ((ToolStripMenuItem)periodMenu.DropDownItems[0]).PerformClick();periodMenu.Dispose();
+                state["threads"]=new object[]{new Dictionary<string,object>{{"id","smoke-chat"},{"title","Test chat"}}};
+                state["selected"]="smoke-chat";
+                Choose("smoke-chat");
+                using(var pinnedMenu=ThreadMenu()){
+                    if(((ToolStripMenuItem)pinnedMenu.DropDownItems[0]).Checked||!((ToolStripMenuItem)pinnedMenu.DropDownItems[3]).Checked)throw new Exception("Pinned menu check invalid");
+                    ((ToolStripMenuItem)pinnedMenu.DropDownItems[0]).PerformClick();
+                }
+                for(int i=0;i<3;i++)using(var autoMenu=ThreadMenu()){
+                    if(!((ToolStripMenuItem)autoMenu.DropDownItems[0]).Checked||((ToolStripMenuItem)autoMenu.DropDownItems[1]).Checked||((ToolStripMenuItem)autoMenu.DropDownItems[3]).Checked)throw new Exception("Auto-follow check did not persist");
+                }
+                Choose("","current");
+                using(var currentMenu=ThreadMenu()){
+                    if(((ToolStripMenuItem)currentMenu.DropDownItems[0]).Checked||!((ToolStripMenuItem)currentMenu.DropDownItems[1]).Checked||((ToolStripMenuItem)currentMenu.DropDownItems[3]).Checked)throw new Exception("Current-chat follow check invalid");
+                }
+                Choose("");
+                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,cacheInDataBar=true,quotaPeriodMenu=true,autoFollowChecked=true,currentChatMode=true,poopMotion=true,width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
         FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();poses.Dispose();bottle.Dispose();bottleEmpty.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
@@ -211,6 +236,38 @@ class CrocDesktop : Form {
     void Demo(double seconds,double? quota=null){particles.Clear();demoSeconds=seconds;demoQuota=quota??(demoUntil>Now()?demoQuota:bottles*20);demoUntil=Now()+12;working=true;emitting=true;bottles=BottleCount(demoQuota);lanes=DemoLanes(seconds);motion=0;status="模拟演示 · 12 秒后恢复真实数据";}
     string Clock(double seconds){try{return new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc).AddSeconds(seconds).ToLocalTime().ToString("HH:mm");}catch{return "未知";}}
     bool QuotaKnown(){return Value("quota_status")=="recorded"&&Number("quota_resets_at")>Now();}
+    string ResetTime(bool full){
+        double seconds=Number("quota_resets_at");if(seconds<=0)return "—";
+        try{var date=new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc).AddSeconds(seconds).ToLocalTime();
+            return date.ToString(full?"yyyy-MM-dd HH:mm":date.Date==DateTime.Now.Date?"HH:mm":"MM/dd");
+        }catch{return "—";}
+    }
+    void ChooseQuota(int minutes){
+        string path=Path.Combine(runtime,"quota-selection.json"),temporary=path+".tmp";
+        File.WriteAllText(temporary,json.Serialize(new{window_minutes=minutes}));
+        if(File.Exists(path))File.Replace(temporary,path,null);else File.Move(temporary,path);
+        demoUntil=0;lastRead=DateTime.MinValue;
+    }
+    ToolStripMenuItem QuotaMenu(){
+        var menu=new ToolStripMenuItem("额度周期："+Value("quota_window_label","额度"));
+        int selected=(int)Number("quota_selection_minutes");
+        var automatic=new ToolStripMenuItem("自动选择（优先 5 小时）");automatic.Checked=selected==0;
+        automatic.Click+=(s,e)=>ChooseQuota(0);menu.DropDownItems.Add(automatic);
+        object rows;
+        if(state.TryGetValue("quota_windows",out rows)&&rows is IEnumerable){
+            foreach(var row in (IEnumerable)rows){
+                var item=row as Dictionary<string,object>;if(item==null)continue;
+                int minutes=Convert.ToInt32(item["quota_window_minutes"]);
+                string label=item["quota_window_label"].ToString();
+                bool recorded=item["quota_status"].ToString()=="recorded";
+                var choice=new ToolStripMenuItem(label+(recorded?" · 剩余 "+Convert.ToDouble(item["quota_remaining"]).ToString("0.#")+"%":" · 等待新记录"));
+                choice.Checked=minutes==selected;choice.Click+=(s,e)=>ChooseQuota(minutes);
+                menu.DropDownItems.Add(choice);
+            }
+        }
+        if(menu.DropDownItems.Count==1)menu.DropDownItems.Add("暂无本地额度周期记录").Enabled=false;
+        return menu;
+    }
     ContextMenuStrip Popup(){
         // WinForms may still access the dropdown after Closed; keep it alive
         // until the owner window closes instead of disposing in that event.
@@ -222,10 +279,11 @@ class CrocDesktop : Form {
         menu.Items.Add("最近响应缓存命中："+(Value("cache_percent").Length==0?"暂无计数":Number("cache_percent").ToString("0.#")+"%" )).Enabled=false;
         menu.Items.Add("最近响应输入 / 输出："+Value("last_input","—")+" / "+Value("last_output","—")+" Token").Enabled=false;
         menu.Items.Add("其中缓存输入："+Value("cached_input","—")+" Token").Enabled=false;
-        menu.Items.Add("5 小时剩余："+(QuotaKnown()?Number("quota_remaining").ToString("0.#")+"%":"未知 / 等待更新")).Enabled=false;
-        menu.Items.Add("额度重置："+(Number("quota_resets_at")>0?Clock(Number("quota_resets_at")):"未知")+"（本机时间）").Enabled=false;
+        menu.Items.Add(Value("quota_window_label","额度")+"剩余："+(QuotaKnown()?Number("quota_remaining").ToString("0.#")+"%":"未知 / 等待更新")).Enabled=false;
+        menu.Items.Add("额度重置："+ResetTime(true)+"（本机时间）").Enabled=false;
         menu.Items.Add("本地额度记录："+(Number("quota_recorded_at")>0?Clock(Number("quota_recorded_at")/1000):"暂无")).Enabled=false;
         menu.Items.Add("输出吞吐："+(Value("rate").Length>0?Number("rate").ToString("0.#")+" tok/s（最近响应平均）":"等待计数")).Enabled=false;
+        menu.Items.Add(QuotaMenu());
         menu.Items.Add(new ToolStripSeparator());
         var design=new ToolStripMenuItem("分级设计与署名");
         design.DropDownItems.Add("奶瓶数量：每瓶约 20% 剩余额度，向上取整").Enabled=false;
@@ -237,10 +295,7 @@ class CrocDesktop : Form {
         design.DropDownItems.Add("交互设计：Hziibepacient").Enabled=false;
         design.DropDownItems.Add("数据基础：drkang7 / Codex Token HUD · MIT").Enabled=false;
         menu.Items.Add(design);
-        var threads=new ToolStripMenuItem("选择观察的对话");
-        threads.DropDownItems.Add("自动跟随最新活动",null,(s,e)=>Choose(""));
-        object rows;if(state.TryGetValue("threads",out rows)){foreach(var row in (IEnumerable)rows){var r=row as Dictionary<string,object>;if(r==null)continue;string id=r["id"].ToString(),title=r["title"].ToString();var item=new ToolStripMenuItem(title.Length>45?title.Substring(0,45)+"…":title);item.ToolTipText=id;item.Checked=id==Value("selected");item.Click+=(s,e)=>Choose(id);threads.DropDownItems.Add(item);}}
-        menu.Items.Add(threads);
+        menu.Items.Add(ThreadMenu());
         var sizes=new ToolStripMenuItem("整体大小（也可滚轮调整）");
         foreach(double size in new[]{.7,1,1.3,1.6,2}){double chosen=size;sizes.DropDownItems.Add((size*100)+"%",null,(s,e)=>ResizeScene(chosen));}menu.Items.Add(sizes);
         var demos=new ToolStripMenuItem("试播动画");
@@ -252,7 +307,40 @@ class CrocDesktop : Form {
         menu.Items.Add(visibleScene?"隐藏（托盘可恢复）":"显示",null,(s,e)=>{visibleScene=!visibleScene;if(visibleScene){Show();Render(true);}else Hide();});
         menu.Items.Add("退出",null,(s,e)=>BeginInvoke(new Action(Close)));return menu;
     }
-    void Choose(string id){File.WriteAllText(Path.Combine(runtime,"selection.json"),json.Serialize(new{thread_id=id}));particles.Clear();bottles=0;lanes=0;demoUntil=0;lastRun="";}
+    string PinnedThread(){
+        try{var saved=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"selection.json")));
+            object id;return saved.TryGetValue("thread_id",out id)&&id!=null?id.ToString():"";
+        }catch{return Value("pinned_thread_id");}
+    }
+    string FollowMode(){
+        if(PinnedThread().Length>0)return "pinned";
+        try{var saved=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"selection.json")));
+            object mode;return saved.TryGetValue("follow_mode",out mode)&&Convert.ToString(mode)=="current"?"current":"auto";
+        }catch{return Value("follow_mode")=="current"?"current":"auto";}
+    }
+    ToolStripMenuItem ThreadMenu(){
+        string pinned=PinnedThread(),mode=FollowMode();
+        var menu=new ToolStripMenuItem("选择观察的对话");
+        var automatic=new ToolStripMenuItem("自动跟随最新活动");automatic.Checked=mode=="auto";
+        automatic.Click+=(s,e)=>Choose("");menu.DropDownItems.Add(automatic);
+        var current=new ToolStripMenuItem("自动跟随当前对话");current.Checked=mode=="current";
+        current.ToolTipText="跟随 Codex 窗口中正在查看的聊天；同名或无法识别时请固定选择";
+        current.Click+=(s,e)=>Choose("","current");menu.DropDownItems.Add(current);
+        menu.DropDownItems.Add(new ToolStripSeparator());
+        object rows;if(state.TryGetValue("threads",out rows)&&rows is IEnumerable){foreach(var row in (IEnumerable)rows){
+            var r=row as Dictionary<string,object>;if(r==null)continue;
+            string id=r["id"].ToString(),title=r["title"].ToString();
+            var item=new ToolStripMenuItem(title.Length>45?title.Substring(0,45)+"…":title);
+            item.ToolTipText=id;item.Checked=mode=="pinned"&&id==pinned;item.Click+=(s,e)=>Choose(id);menu.DropDownItems.Add(item);
+        }}
+        return menu;
+    }
+    void Choose(string id,string mode="auto"){
+        string path=Path.Combine(runtime,"selection.json"),temporary=path+".tmp";
+        File.WriteAllText(temporary,json.Serialize(new{thread_id=id,follow_mode=id.Length>0?"pinned":mode}));
+        if(File.Exists(path))File.Replace(temporary,path,null);else File.Move(temporary,path);
+        particles.Clear();lanes=0;demoUntil=0;lastRun="";
+    }
     void Tick(){
         var now=DateTime.UtcNow;float dt=(float)Math.Min(.05,(now-previous).TotalSeconds);previous=now;
         if((now-lastRead).TotalSeconds>.09){lastRead=now;try{state=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"scene.json")));}catch{}}
@@ -298,7 +386,9 @@ class CrocDesktop : Form {
         if(!wasEmitting&&emitting&&clock-poseSwitchAt>.4)squashVel-=1.2f;
         wasEmitting=emitting;
         // Milk gone from the bottles: the crocodile was drinking.
-        if(lastQuota>=0&&bottles>0&&quotaPercent<lastQuota-.01f&&!emitting)drinkUntil=clock+1.7;
+        string quotaWindow=Value("quota_window_minutes");
+        if(lastQuotaWindow==quotaWindow&&lastQuota>=0&&bottles>0&&quotaPercent<lastQuota-.01f&&!emitting)drinkUntil=clock+1.7;
+        lastQuotaWindow=quotaWindow;
         lastQuota=quotaPercent;
         double jump=clock-poseSwitchAt;
         hopY=jump>=.07&&jump<.31?-(working?8:6)*(float)Math.Sin(Math.PI*(jump-.07)/.24):0;
@@ -393,7 +483,7 @@ class CrocDesktop : Form {
     }
     string[] BarValues(){
         return new[]{QuotaKnown()?Number("quota_remaining").ToString("0.#")+"%":"待更新",
-            Number("quota_resets_at")>0?Clock(Number("quota_resets_at")):"—",
+            ResetTime(false),
             Value("rate").Length>0?Number("rate").ToString("0.#")+" tok/s":"—",
             Value("cache_percent").Length>0?Number("cache_percent").ToString("0.#")+"%":"—"};
     }

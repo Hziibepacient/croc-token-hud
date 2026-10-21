@@ -57,6 +57,9 @@ jobs:
           New-Item -ItemType Directory -Force $runtime | Out-Null
           & $csc /nologo /target:winexe /optimize+ /out:build\CrocDesktop.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll CrocDesktop.cs
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $wpf = Join-Path (Split-Path $csc) 'WPF'
+          & $csc /nologo /target:winexe /optimize+ /main:CodexTokenHud.CrocCurrentChat /out:build\CrocCurrentChat.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:Microsoft.CSharp.dll "/r:$wpf\UIAutomationClient.dll" "/r:$wpf\UIAutomationTypes.dll" "/r:$wpf\WindowsBase.dll" CrocCurrentChat.cs CodexTokenHud.cs RuntimeConfiguration.cs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $process = Start-Process build\CrocDesktop.exe -ArgumentList @((Get-Location).Path, $runtime, '--demo', '--smoke') -PassThru
           if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Crocodile smoke test timed out' }
           $result = Get-Content (Join-Path $runtime 'smoke-result.json') -Raw | ConvertFrom-Json

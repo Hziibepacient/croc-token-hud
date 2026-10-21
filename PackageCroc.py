@@ -9,6 +9,7 @@ def main():
     output = root / 'dist' / 'CrocToken-preview-source.zip'
     output.parent.mkdir(exist_ok=True)
     files = ['croc.py', 'croc_desktop.py', 'local_quota.py', 'CrocDesktop.cs',
+             'CrocCurrentChat.cs', 'CodexTokenHud.cs', 'RuntimeConfiguration.cs',
              'StartCroc.cmd', 'StartCrocDesktop.cmd', 'dashboard.py', 'history.py', 'metrics.py',
              'LICENSE', 'CROC_README.md', 'CROC_RELEASE_NOTES.md', 'web/croc.html', 'web/croc.css',
              'web/croc.js', 'croc_scene.py', 'web/index.html', 'web/app.js', 'web/style.css',
