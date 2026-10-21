@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -34,5 +35,8 @@ class LocalQuotaTests(unittest.TestCase):
             self.assertEqual(reader.update([path])['quota_status'],'unknown')
             with path.open('a',encoding='utf8') as output:output.write(data[30:])
             self.assertEqual(reader.update([path])['quota_remaining'],75)
+            stat=path.stat()
             path.write_text(json.dumps(record(at='2026-10-21T02:00:00Z',used=50))+'\n',encoding='utf8')
+            # Same-size rewrites are detected by mtime; coarse Windows clocks can repeat it within one test.
+            os.utime(path,ns=(stat.st_atime_ns,stat.st_mtime_ns+1_000_000))
             self.assertEqual(reader.update([path])['quota_remaining'],50)
