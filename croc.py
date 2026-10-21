@@ -5,7 +5,7 @@ import os
 import time
 import webbrowser
 
-from dashboard import start_server
+from dashboard import data_directory, start_server
 from metrics import atomic_json
 
 
@@ -14,7 +14,7 @@ def main():
     parser.add_argument('--no-browser', action='store_true')
     parser.add_argument('--codex-home', type=Path, default=Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex'))
     args = parser.parse_args()
-    runtime = Path(__file__).resolve().parent / 'runtime' / 'croc'
+    runtime = data_directory() / 'croc'
     server = start_server(args.codex_home, runtime)
     url = server.url().replace('/#', '/croc#')
     atomic_json(runtime / 'croc.json', {'url': url, 'pid': os.getpid()})

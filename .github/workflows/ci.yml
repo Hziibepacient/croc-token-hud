@@ -45,6 +45,29 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
           retention-days: 14
+  croc-desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile and smoke-test the crocodile desktop window
+        shell: powershell
+        run: |
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          $runtime = Join-Path (Get-Location).Path 'build\croc-smoke'
+          New-Item -ItemType Directory -Force $runtime | Out-Null
+          & $csc /nologo /target:winexe /optimize+ /out:build\CrocDesktop.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll CrocDesktop.cs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $process = Start-Process build\CrocDesktop.exe -ArgumentList @((Get-Location).Path, $runtime, '--demo', '--smoke') -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Crocodile smoke test timed out' }
+          $result = Get-Content (Join-Path $runtime 'smoke-result.json') -Raw | ConvertFrom-Json
+          if ($result.error) { throw $result.error }
+          $result | Format-List
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: croc-desktop-preview
+          path: build/croc-smoke/*.png
+          retention-days: 14
   native-overlay:
     name: Native overlay (${{ matrix.target }})
     strategy:

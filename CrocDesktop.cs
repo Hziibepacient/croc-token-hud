@@ -30,6 +30,12 @@ class CrocDesktop : Form {
     readonly Timer timer=new Timer();
     readonly ContextMenuStrip contextMenu=new ContextMenuStrip();
     Image rest,work,bottle,poop;
+    // Sprites pre-resampled once per scale, so each frame copies small bitmaps.
+    Bitmap restScaled,workScaled,bottleScaled,poopScaled;
+    double spriteScale=0;
+    readonly string[] barText=new string[3];
+    readonly Font[] barFont=new Font[3];
+    string renderedSignature="";
     Bitmap frame;
     NotifyIcon tray;
     Dictionary<string,object> state=new Dictionary<string,object>();
@@ -45,12 +51,6 @@ class CrocDesktop : Form {
     DateTime previous=DateTime.UtcNow, lastRead=DateTime.MinValue;
     class Particle { public float X,Y,Speed,Age,Phase; public int Row; }
     float RowY(int row){return 80+row*22;}
-    float FrontEdge(float y){
-        var bitmap=(Bitmap)work;
-        int py=Math.Max(0,Math.Min(bitmap.Height-1,(int)((y-35)*bitmap.Height/164)));
-        for(int x=0;x<bitmap.Width;x++)if(bitmap.GetPixel(x,py).A>128)return 125+x*164f/bitmap.Width;
-        return 155;
-    }
     static readonly int[] LaneOrder={3,2,4,1,0}; // Butt first, then spread above/below.
     float RowStart(int row){
         if(rowStarts[row]>0)return rowStarts[row];
@@ -78,11 +78,11 @@ class CrocDesktop : Form {
         bool onScreen=false;foreach(var screen in Screen.AllScreens)if(screen.WorkingArea.IntersectsWith(Bounds))onScreen=true;
         if(!onScreen)Location=new Point(area.Right-Width-20,area.Bottom-Height-20);
         tray=new NotifyIcon();tray.Icon=SystemIcons.Application;tray.Text="桌面鳄鱼 · 右键设置";tray.Visible=true;
-        tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Right)Popup().Show(Cursor.Position);else if(e.Button==MouseButtons.Left){visibleScene=true;Show();Render();}};
+        tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Right)Popup().Show(Cursor.Position);else if(e.Button==MouseButtons.Left){visibleScene=true;Show();Render(true);}};
         MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){dragging=true;ReleaseCapture();SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero);dragging=false;Save();}else if(e.Button==MouseButtons.Right)Popup().Show(Cursor.Position);};
         MouseWheel+=(s,e)=>ResizeScene(scale+(e.Delta>0?.1:-.1));
         timer.Interval=25;timer.Tick+=(s,e)=>Tick();
-        Shown+=(s,e)=>{loaded=true;if(demo)Demo(smoke?.7:2,smoke?(double?)100:null);timer.Start();Render();};
+        Shown+=(s,e)=>{loaded=true;if(demo)Demo(smoke?.7:2,smoke?(double?)100:null);timer.Start();Render(true);};
         if(smoke){var check=new Timer();check.Interval=1000;check.Tick+=(s,e)=>{
             check.Stop();timer.Stop();
             try{
@@ -107,10 +107,22 @@ class CrocDesktop : Form {
                 File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,connectingWakes=true,width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
-        FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();bottle.Dispose();poop.Dispose();if(frame!=null)frame.Dispose();};
+        FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();bottle.Dispose();poop.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();if(frame!=null)frame.Dispose();};
     }
     void Save(){try{File.WriteAllText(Path.Combine(runtime,"layout.json"),json.Serialize(new{ x=Left,y=Top,scale=scale}));}catch{}}
-    void ResizeScene(double value){scale=Math.Max(.7,Math.Min(2,value));ClientSize=new Size((int)(420*scale),(int)(244*scale));Save();Render();}
+    void ResizeScene(double value){scale=Math.Max(.7,Math.Min(2,value));ClientSize=new Size((int)(420*scale),(int)(244*scale));Save();Render(true);}
+    static Bitmap Resample(Image source,float width,float height,double factor){
+        var result=new Bitmap(Math.Max(1,(int)Math.Ceiling(width*factor)),Math.Max(1,(int)Math.Ceiling(height*factor)),PixelFormat.Format32bppPArgb);
+        using(var g=Graphics.FromImage(result)){g.InterpolationMode=InterpolationMode.HighQualityBicubic;g.PixelOffsetMode=PixelOffsetMode.HighQuality;g.DrawImage(source,new Rectangle(0,0,result.Width,result.Height));}
+        return result;
+    }
+    void DisposeSprites(){foreach(var b in new[]{restScaled,workScaled,bottleScaled,poopScaled})if(b!=null)b.Dispose();}
+    void EnsureSprites(){
+        if(spriteScale==scale)return;
+        DisposeSprites();spriteScale=scale;
+        restScaled=Resample(rest,164,164,scale);workScaled=Resample(work,164,164,scale);
+        bottleScaled=Resample(bottle,20,30,scale);poopScaled=Resample(poop,20,12,scale);
+    }
     static int BottleCount(double percent){return (int)Math.Ceiling(Math.Max(0,Math.Min(100,percent))/20);}
     static int DemoLanes(double seconds){return seconds>=3?1:seconds>=1.2?2:3;}
     void Demo(double seconds,double? quota=null){particles.Clear();demoSeconds=seconds;demoQuota=quota??(demoUntil>Now()?demoQuota:bottles*20);demoUntil=Now()+12;working=true;emitting=true;bottles=BottleCount(demoQuota);lanes=DemoLanes(seconds);motion=0;status="模拟演示 · 12 秒后恢复真实数据";}
@@ -154,7 +166,7 @@ class CrocDesktop : Form {
         foreach(double q in new[]{100,75,50,20,0}){double selectedQuota=q;quotas.DropDownItems.Add(q+"%",null,(s,e)=>{Demo(2,selectedQuota);});}menu.Items.Add(quotas);
         menu.Items.Add("模拟结束 / 恢复真实数据",null,(s,e)=>{demoUntil=0;working=false;emitting=false;lastRead=DateTime.MinValue;Render();});
         var top=new ToolStripMenuItem("始终置顶");top.Checked=TopMost;top.Click+=(s,e)=>{TopMost=!TopMost;};menu.Items.Add(top);
-        menu.Items.Add(visibleScene?"隐藏（托盘可恢复）":"显示",null,(s,e)=>{visibleScene=!visibleScene;if(visibleScene)Show();else Hide();});
+        menu.Items.Add(visibleScene?"隐藏（托盘可恢复）":"显示",null,(s,e)=>{visibleScene=!visibleScene;if(visibleScene){Show();Render(true);}else Hide();});
         menu.Items.Add("退出",null,(s,e)=>BeginInvoke(new Action(Close)));return menu;
     }
     void Choose(string id){File.WriteAllText(Path.Combine(runtime,"selection.json"),json.Serialize(new{thread_id=id}));particles.Clear();bottles=0;lanes=0;demoUntil=0;lastRun="";}
@@ -215,29 +227,38 @@ class CrocDesktop : Form {
         using(var valueBrush=new SolidBrush(Color.FromArgb(58,59,56)))
         using(var format=new StringFormat(StringFormat.GenericTypographic){Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center,FormatFlags=StringFormatFlags.NoWrap}){
             for(int i=0;i<3;i++){
-                float size=15;
-                // Fit the entire value, including tok/s, before drawing; never truncate the unit.
-                while(size>9){using(var candidate=new Font("Microsoft YaHei UI",size,FontStyle.Bold,GraphicsUnit.Pixel)){
-                    if(g.MeasureString(values[i],candidate,1000,format).Width<=widths[i]-12)break;
-                }size-=.5f;}
-                using(var font=new Font("Microsoft YaHei UI",size,FontStyle.Bold,GraphicsUnit.Pixel))
-                    g.DrawString(values[i],font,valueBrush,new RectangleF(left+6,y,widths[i]-12,h),format);
+                if(barText[i]!=values[i]){
+                    // Fit the entire value, including tok/s, once per new value; never truncate the unit.
+                    float size=15;
+                    while(size>9){using(var candidate=new Font("Microsoft YaHei UI",size,FontStyle.Bold,GraphicsUnit.Pixel)){
+                        if(g.MeasureString(values[i],candidate,1000,format).Width<=widths[i]-12)break;
+                    }size-=.5f;}
+                    if(barFont[i]!=null)barFont[i].Dispose();
+                    barFont[i]=new Font("Microsoft YaHei UI",size,FontStyle.Bold,GraphicsUnit.Pixel);barText[i]=values[i];
+                }
+                g.DrawString(values[i],barFont[i],valueBrush,new RectangleF(left+6,y,widths[i]-12,h),format);
                 left+=widths[i];
             }
         }
     }
-    void Render(){
+    void Render(bool force=false){
         if(!loaded||Width<1||Height<1)return;
-        var image=new Bitmap(Width,Height,PixelFormat.Format32bppArgb);
+        // A resting scene without particles is static: skip redrawing until its content changes.
+        bool animated=working||emitting||particles.Count>0;
+        string signature=working+"|"+bottles+"|"+Width+"x"+Height+"|"+string.Join("|",BarValues());
+        if(!force&&!animated&&signature==renderedSignature&&frame!=null)return;
+        renderedSignature=animated?"":signature;
+        EnsureSprites();
+        var image=frame!=null&&frame.Width==Width&&frame.Height==Height?frame:new Bitmap(Width,Height,PixelFormat.Format32bppArgb);
         using(var g=Graphics.FromImage(image)){
-            g.Clear(Color.Transparent);g.ScaleTransform((float)scale,(float)scale);g.InterpolationMode=InterpolationMode.HighQualityBicubic;g.SmoothingMode=SmoothingMode.AntiAlias;
-            Image sprite=working?work:rest;
+            g.Clear(Color.Transparent);g.ScaleTransform((float)scale,(float)scale);g.InterpolationMode=InterpolationMode.Bilinear;g.SmoothingMode=SmoothingMode.AntiAlias;
+            Image sprite=working?workScaled:restScaled;
             float bob=working?(float)Math.Sin(Now()*5)*1.1f:0;
             // Five stable staggered slots, all inside the crocodile's head/foot height.
             float[,] slots={{125,84,.28f},{132,114,-.12f},{110,136,.06f},{149,150,-.05f},{118,174,.14f}};
             for(int i=0;i<Math.Min(5,bottles);i++){
                 var saved=g.Save();g.TranslateTransform(slots[i,0],slots[i,1]);g.RotateTransform(slots[i,2]*180/(float)Math.PI);
-                g.DrawImage(bottle,new RectangleF(-10,-22,20,30),new RectangleF(274,111,706,1038),GraphicsUnit.Pixel);g.Restore(saved);
+                g.DrawImage(bottleScaled,new RectangleF(-10,-22,20,30));g.Restore(saved);
             }
             // Soft connecting wakes and travelling dashes keep sparse particles
             // readable as a flow without covering the original cartoon sprite.
@@ -277,7 +298,7 @@ class CrocDesktop : Form {
                 float fade=Math.Max(0,Math.Min(1,(420-p.X)/20));
                 using(var attr=new ImageAttributes()){
                     var alpha=new ColorMatrix();alpha.Matrix33=fade;attr.SetColorMatrix(alpha);
-                    g.DrawImage(poop,new Rectangle((int)p.X-10,(int)p.Y-6,20,12),337,365,770,478,GraphicsUnit.Pixel,attr);
+                    g.DrawImage(poopScaled,new Rectangle((int)p.X-10,(int)p.Y-6,20,12),0,0,poopScaled.Width,poopScaled.Height,GraphicsUnit.Pixel,attr);
                 }
             }
             // Paint the character last so new particles emerge from behind it.
@@ -288,7 +309,7 @@ class CrocDesktop : Form {
         IntPtr screen=GetDC(IntPtr.Zero),dc=CreateCompatibleDC(screen),bitmap=image.GetHbitmap(Color.FromArgb(0)),old=SelectObject(dc,bitmap);
         try{var pos=new PointNative(Left,Top);var size=new SizeNative(Width,Height);var source=new PointNative(0,0);var blend=new Blend{Op=0,Flags=0,Alpha=255,Format=1};if(!UpdateLayeredWindow(Handle,screen,ref pos,ref size,dc,ref source,0,ref blend,2))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());}
         finally{SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(IntPtr.Zero,screen);}
-        if(frame!=null)frame.Dispose();frame=image;
+        if(frame!=null&&frame!=image)frame.Dispose();frame=image;
     }
     protected override void WndProc(ref Message m){
         if(m.Msg==0x84&&frame!=null){long value=m.LParam.ToInt64();var p=PointToClient(new Point((short)(value&65535),(short)((value>>16)&65535)));if(p.X>=0&&p.Y>=0&&p.X<frame.Width&&p.Y<frame.Height&&frame.GetPixel(p.X,p.Y).A<15){m.Result=new IntPtr(-1);return;}}

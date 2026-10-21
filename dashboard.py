@@ -64,6 +64,7 @@ class Dashboard:
         self.histories = HistoryCache()
         self.tails = TailCache()
         self.lock = threading.RLock()
+        self.croc_feed = None
 
     def native_info(self):
         mode = "activity" if read_selection(self.runtime / "selection.json").get("binding_mode") == "activity" else self.native_follow_mode
@@ -90,6 +91,11 @@ class Dashboard:
                 return {"threads": rows, "bound_thread_id": native.get("thread_id"),
                         "repository_state": self.catalog.repository.state,
                         **self.native_info()}
+            if endpoint == "croc":
+                if self.croc_feed is None:
+                    from croc_scene import SceneFeed
+                    self.croc_feed = SceneFeed(self)
+                return self.croc_feed.snapshot(thread_id or None)
             row = self.row(thread_id)
             if endpoint == "live":
                 force = query.get("force") == ["1"]
@@ -206,7 +212,6 @@ class Handler(BaseHTTPRequestHandler):
             static = {"/": ("index.html", "text/html; charset=utf-8"),
                       "/croc": ("croc.html", "text/html; charset=utf-8"),
                       "/croc.js": ("croc.js", "text/javascript; charset=utf-8"),
-                      "/croc-model.js": ("croc-model.js", "text/javascript; charset=utf-8"),
                       "/croc.css": ("croc.css", "text/css; charset=utf-8"),
                       "/assets/croc-rest.png": ("assets/croc-rest.png", "image/png"),
                       "/assets/croc-work.png": ("assets/croc-work.png", "image/png"),

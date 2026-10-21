@@ -11,7 +11,7 @@ def main():
     files = ['croc.py', 'croc_desktop.py', 'local_quota.py', 'CrocDesktop.cs',
              'StartCroc.cmd', 'StartCrocDesktop.cmd', 'dashboard.py', 'history.py', 'metrics.py',
              'LICENSE', 'CROC_README.md', 'CROC_RELEASE_NOTES.md', 'web/croc.html', 'web/croc.css',
-             'web/croc.js', 'web/croc-model.js', 'web/index.html', 'web/app.js', 'web/style.css',
+             'web/croc.js', 'croc_scene.py', 'web/index.html', 'web/app.js', 'web/style.css',
              'web/assets/croc-rest.png', 'web/assets/croc-work.png',
              'web/assets/bottle.png', 'web/assets/poop.png']
     for name in files:
