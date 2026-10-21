@@ -1,5 +1,5 @@
 import unittest
-from croc_desktop import scene, level
+from croc_scene import bottles, scene, level
 
 
 class DesktopSceneTests(unittest.TestCase):
@@ -59,3 +59,9 @@ class DesktopSceneTests(unittest.TestCase):
         for rate,tier,lanes in [(14.9,1,1),(15,2,1),(29.9,2,1),(30,3,2),(59.9,3,2),(60,4,2),(99.9,4,2),(100,5,3)]:
             result=scene(self.sample(rate))
             self.assertEqual((result["speed_tier"],result["lanes"]),(tier,lanes))
+
+    def test_quota_bottles_round_up_and_hide_unknown_or_expired(self):
+        for remaining, expected in [(0,0),(0.1,1),(20,1),(20.1,2),(74,4),(100,5)]:
+            self.assertEqual(bottles({'quota_status':'recorded','quota_remaining':remaining}), expected)
+        self.assertEqual(bottles({'quota_status':'awaiting_reset','quota_remaining':80}), 0)
+        self.assertEqual(bottles({'quota_status':'unknown','quota_remaining':None}), 0)
