@@ -90,11 +90,12 @@ class CrocDesktop : Form {
         tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Right)Popup().Show(Cursor.Position);else if(e.Button==MouseButtons.Left){visibleScene=true;Show();Render(true);}};
         MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){dragging=true;ReleaseCapture();SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero);dragging=false;Save();}else if(e.Button==MouseButtons.Right)Popup().Show(Cursor.Position);};
         MouseWheel+=(s,e)=>ResizeScene(scale+(e.Delta>0?.1:-.1));
-        timer.Interval=25;timer.Tick+=(s,e)=>Tick();
+        timer.Interval=33;timer.Tick+=(s,e)=>Tick(); // ~30 fps; all motion is time-based.
         Shown+=(s,e)=>{loaded=true;if(demo)Demo(smoke?.7:2,smoke?(double?)100:null);timer.Start();Render(true);};
         if(smoke){var check=new Timer();check.Interval=1000;check.Tick+=(s,e)=>{
             check.Stop();timer.Stop();
             try{
+                if(clock<.3)throw new Exception("Animation timer is not running");
                 if(!IsWindowVisible(Handle)||frame==null||!working||bottles!=5||lanes!=3)throw new Exception("Working window state invalid");
                 if(frame.GetPixel(0,0).A!=0)throw new Exception("Background is not transparent");
                 if(frame.GetPixel((int)(90*scale),(int)(216*scale)).A<200)throw new Exception("Bottom data bar missing");
@@ -113,7 +114,7 @@ class CrocDesktop : Form {
                 state["model"]="smoke-model";state["cache_percent"]=80;
                 for(int i=0;i<8;i++){var testMenu=Popup();testMenu.Show(PointToScreen(new Point(30,30)));Application.DoEvents();testMenu.Close();Application.DoEvents();if(testMenu.IsDisposed)throw new Exception("Context menu disposed while handling messages");}
                 if(!contextMenu.Items[2].Text.Contains("smoke-model")||!contextMenu.Items[3].Text.Contains("80"))throw new Exception("Model/cache menu fields missing");
-                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,poopMotion=true,width=Width,height=Height}));
+                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,poopMotion=true,width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
         FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();bottle.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
@@ -473,7 +474,7 @@ class CrocDesktop : Form {
     }
     void Render(bool force=false){
         if(!loaded||Width<1||Height<1)return;
-        // Resting breath and blinks need ~15 fps; motion gets every tick.
+        // Resting breath and blinks need ~15 fps; motion gets every ~30 fps tick.
         if(!force&&!Busy()&&clock-lastRender<.066)return;
         lastRender=clock;
         EnsureSprites();EnsureSurface();
