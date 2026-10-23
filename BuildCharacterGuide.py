@@ -131,6 +131,6 @@ def main():
             if not path.exists() or path.read_text(encoding='utf-8-sig')!=content: raise SystemExit('请重新运行 python BuildCharacterGuide.py：'+name)
         else:
             path.parent.mkdir(parents=True,exist_ok=True);path.write_text(content,encoding='utf-8')
-    print('角色指令、规范、skill 和校验工具一致。')
+    print('Character guide, schema, skill and validator are synchronized.')
 
 if __name__=='__main__': main()
