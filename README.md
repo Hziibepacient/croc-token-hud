@@ -6,7 +6,7 @@
 
 ![桌面效果，使用模拟数据](docs/images/croc-desktop.png)
 
-**[下载最新预览版](https://github.com/Hziibepacient/croc-token-hud/releases/tag/croc-v1.4.0-beta.1) · [全部版本](https://github.com/Hziibepacient/croc-token-hud/releases) · [详细使用说明](CROC_README.md)**
+**[下载最新预览版](https://github.com/Hziibepacient/croc-token-hud/releases/tag/croc-v1.4.0-beta.2) · [全部版本](https://github.com/Hziibepacient/croc-token-hud/releases) · [详细使用说明](CROC_README.md)**
 
 > 当前提供的是 Windows **源码预览包**，需要 Python 3.10+ 和 Windows .NET Framework 4.x。首次运行自动编译窗口；没有内置 Python，不是免安装运行包。新版发布为预览版时，请在“全部版本”页面下载。
 
@@ -16,7 +16,7 @@
 - **看输出速度**：五档动画、连续变速，便便先从身体后方出发，再向上下分道。
 - **看额度和缓存**：紧凑底栏显示所选周期剩余额度、重置时间、平均输出速度及最近响应缓存命中率。
 - **选择观察范围**：跟随最新活动、跟随当前 Codex 对话，或者固定一个聊天。
-- **更换角色**：右键选择已有形象；通过本地工作台上传 ZIP、预览八个动作、确认后添加。
+- **更换角色**：右键选择已有形象；通过本地工作台上传 ZIP、预览八个动作、填写喜欢的名字后添加；已有自定义角色也可以在工作台改名，重启后保留。
 - **自己做角色**：复制完整指令，把一张或多张参考图交给具备生图能力的 Codex，生成可导入的角色包。
 
 ## 三步启动

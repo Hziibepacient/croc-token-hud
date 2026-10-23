@@ -106,9 +106,7 @@ def validate(data):
         raise ValueError('仅支持 version=1、canvas=[1024,1024]')
     if not isinstance(manifest.get('id'),str) or not ID.fullmatch(manifest['id']) or manifest['id'] == 'builtin-croc' or manifest['id'] in RESERVED:
         raise ValueError('角色 id 须为 1–48 位小写字母、数字或短横线，且不能占用原鳄鱼 id')
-    name=manifest.get('name')
-    if not isinstance(name,str) or not name.strip() or len(name)>40 or any(ord(c)<32 for c in name):
-        raise ValueError('角色名称须为 1–40 个可见字符')
+    manifest['name']=character_name(manifest.get('name'))
     if type(manifest.get('pixel_art', False)) is not bool:
         raise ValueError('pixel_art 必须是布尔值')
     if manifest.get('poses') != {p:'poses/'+p+'.png' for p in POSES}:
@@ -158,6 +156,12 @@ def compile_assets(folder, manifest, images):
         strip.paste(frames[p],(416*i,0))
     strip.save(target/'poses.png')
     atomic_json(target/'render.json',{'outlets':outlets,'pixel_art':manifest.get('pixel_art',False)})
+
+
+def character_name(value):
+    if not isinstance(value,str) or not value.strip() or len(value.strip())>40 or any(ord(c)<32 or ord(c)==127 for c in value):
+        raise ValueError('角色名称须为 1–40 个可见字符')
+    return value.strip()
 
 
 class CharacterStore:
@@ -215,22 +219,36 @@ class CharacterStore:
             if token not in self.drafts or name not in ALLOWED: raise ValueError('预览已过期或文件不存在')
             with zipfile.ZipFile(io.BytesIO(self.drafts[token][0])) as z: return z.read(name)
 
-    def commit(self,token):
+    def rename(self,character_id,name):
+        with self.lock:
+            name=character_name(name)
+            if character_id=='builtin-croc' or character_id not in {r['id'] for r in self.catalog()['characters']}:
+                raise ValueError('请选择已添加的自定义角色')
+            path=self.root/character_id/'character.json'
+            manifest=json.loads(path.read_text(encoding='utf-8'))
+            manifest['name']=name
+            atomic_json(path,manifest)
+            return self.catalog()
+
+    def commit(self,token,name=None):
         with self.lock:
             self.expire()
             if token not in self.drafts: raise ValueError('预览已过期，请重新上传')
             manifest,files,images=validate(self.drafts[token][0])
+            if name is not None: manifest['name']=character_name(name)
             final=self.root/manifest['id']
             digest=hashlib.sha256(self.drafts[token][0]).hexdigest()
             if final.exists():
                 if (final/'package.sha256').read_text()!=digest:
                     raise ValueError('已有相同 id 的不同角色包，请使用新的 id；不会覆盖旧角色')
+                if name is not None: self.rename(manifest['id'],name)
                 del self.drafts[token]
                 return self.select(manifest['id'])
             temporary=Path(tempfile.mkdtemp(prefix='.import-',dir=self.root))
             try:
                 for name,content in files.items():
                     path=temporary/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
+                atomic_json(temporary/'character.json',manifest)
                 compile_assets(temporary,manifest,images)
                 (temporary/'package.sha256').write_text(digest)
                 temporary.rename(final)

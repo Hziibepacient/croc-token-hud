@@ -87,6 +87,35 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(self.store.current(),'builtin-croc')
         self.assertFalse((self.root/'escape.py').exists())
 
+    def test_custom_name_rename_and_reimport_persist_without_changing_art(self):
+        result=self.store.commit(self.store.stage(self.data)['draft'],'  我的伙伴  ')
+        self.assertEqual(result['characters'][1]['name'],'我的伙伴')
+        folder=self.store.root/'test-shape'
+        before={str(p.relative_to(folder)):p.read_bytes() for p in folder.rglob('*') if p.is_file() and p.name!='character.json'}
+        self.store.select('builtin-croc')
+        result=self.store.rename('test-shape','ANS小鲨宾')
+        self.assertEqual(result['selected'],'builtin-croc')
+        self.assertEqual(result['characters'][1]['name'],'ANS小鲨宾')
+        self.assertEqual(before,{str(p.relative_to(folder)):p.read_bytes() for p in folder.rglob('*') if p.is_file() and p.name!='character.json'})
+        self.store=CharacterStore(self.root/'runtime')
+        self.assertEqual(self.store.catalog()['characters'][1]['name'],'ANS小鲨宾')
+        result=self.store.commit(self.store.stage(self.data)['draft'])
+        self.assertEqual(result['characters'][1]['name'],'ANS小鲨宾')
+        result=self.store.commit(self.store.stage(self.data)['draft'],'新名字')
+        self.assertEqual(result['characters'][1]['name'],'新名字')
+
+    def test_invalid_names_leave_install_and_existing_character_unchanged(self):
+        draft=self.store.stage(self.data)['draft']
+        for name in ['', '   ', '长'*41, 'bad\nname', 'bad\x7fname', 123]:
+            with self.subTest(name=name),self.assertRaises(ValueError):self.store.commit(draft,name)
+            self.assertFalse((self.store.root/'test-shape').exists())
+        self.store.commit(draft,'保留名字')
+        for name in ['', '长'*41, None, 'bad\tname']:
+            with self.subTest(name=name),self.assertRaises(ValueError):self.store.rename('test-shape',name)
+        self.assertEqual(self.store.catalog()['characters'][1]['name'],'保留名字')
+        with self.assertRaises(ValueError):self.store.rename('../outside','名字')
+        with self.assertRaises(ValueError):self.store.rename('builtin-croc','名字')
+
     def test_copied_pose_rejected(self):
         data=mutate(self.data,lambda f:f.update({'poses/think.png':f['poses/rest.png']}))
         with self.assertRaisesRegex(ValueError,'完全相同'):validate(data)
@@ -155,10 +184,17 @@ class PackageTests(unittest.TestCase):
         with request('/api/asset?draft='+staged['draft']+'&file=poses/work.png&size=416') as r:
             with Image.open(io.BytesIO(r.read())) as im: self.assertEqual(im.size,(416,416))
         with self.assertRaises(urllib.error.HTTPError):request('/api/asset?draft='+staged['draft']+'&file=poses/work.png&size=4096')
-        with request('/api/commit',json.dumps({'draft':staged['draft']}).encode()) as r:self.assertEqual(json.load(r)['selected'],'test-shape')
+        with request('/api/commit',json.dumps({'draft':staged['draft'],'name':'上传后起名'}).encode()) as r:
+            result=json.load(r);self.assertEqual(result['selected'],'test-shape')
+            self.assertEqual(result['characters'][1]['name'],'上传后起名')
         with request('/api/asset?id=test-shape&file=poses/rest.png&size=96') as r:
             with Image.open(io.BytesIO(r.read())) as im:self.assertEqual(im.size,(96,96))
         with request('/api/select',json.dumps({'id':'builtin-croc'}).encode()) as r:self.assertEqual(json.load(r)['selected'],'builtin-croc')
+        with request('/api/rename',json.dumps({'id':'test-shape','name':'改名成功'}).encode()) as r:
+            result=json.load(r);self.assertEqual(result['selected'],'builtin-croc')
+            self.assertEqual(result['characters'][1]['name'],'改名成功')
+        with request('/api/manifest?id=test-shape') as r:self.assertEqual(json.load(r)['name'],'改名成功')
+        with self.assertRaises(urllib.error.HTTPError):request('/api/rename',json.dumps({'id':'test-shape','name':''}).encode())
         with request('/api/generator-kit') as r:
             with zipfile.ZipFile(io.BytesIO(r.read())) as z:
                 self.assertIsNone(z.testzip());self.assertIn('character_pack.py',z.namelist())

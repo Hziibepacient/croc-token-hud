@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.0-beta.2 — 2026-10-23
+
+Add custom character names during ZIP import and a rename action for installed characters. Persist names locally and display them in the desktop character menu. Keep artwork, character IDs, selection and package identity intact when renaming; preserve custom names on identical-package reimport. Validate names and add import, persistence, API and failure regressions.
+
 ## 1.4.0-beta.1 — 2026-10-23
 
 Croc desktop preview: add local character workbench, inert eight-pose ZIP import, persistent context-menu character selection, shared Codex generation guide and portable skill. Preserve original crocodile animation. Bound runtime sprites and browser previews to 416 pixels, use 96-pixel library thumbnails, and pause hidden workbench rendering. Add a three-step creation guide and rebuild the project README around the current Windows product. Official/relay quota semantics are unchanged; relay balances remain unimplemented.

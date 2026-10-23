@@ -88,8 +88,9 @@ class CharacterHandler(Handler):
             else:
                 body=json.loads(data)
                 if not isinstance(body,dict): raise ValueError('请求格式错误')
-                if path=='/api/commit': result=store.commit(body.get('draft',''))
+                if path=='/api/commit': result=store.commit(body.get('draft',''),body.get('name'))
                 elif path=='/api/select': result=store.select(body.get('id',''))
+                elif path=='/api/rename': result=store.rename(body.get('id',''),body.get('name'))
                 else: raise ValueError('未知接口')
             self.send(200,result)
         except (ValueError,OSError,KeyError,TypeError) as exc: self.send(400,{'error':str(exc)})
