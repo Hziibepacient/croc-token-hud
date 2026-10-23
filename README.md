@@ -1,189 +1,109 @@
-# Croc Token HUD · 鳄鱼 Token 可视化
+# Croc Token HUD
 
-奶瓶数量表示所选周期剩余额度，便便的行数、密度和流动速度表示最近响应平均输出吞吐。窗口下方依次显示剩余百分比、重置时间、完整 `tok/s` 输出速度和最近响应缓存命中率。
+让 Codex 的工作状态，变成桌面上的一个小伙伴。
 
-交互设计与改版：**Hziibepacient**。基于 **drkang7/codex-token-hud**，保留原作者版权及 MIT 许可证。
+一个 Windows 透明悬浮角色：休息时放松，工作时用动画表现输出速度。奶瓶显示剩余额度，右侧便便的行数、密度和移动速度随吞吐变化。支持导入自己的八动作角色包，也可以随时切回已有形象。
 
-**Windows 桌面版：解压后双击 `StartCrocDesktop.cmd`。需要 Python 3.10+ 和 Windows .NET Framework 4.x，首次运行自动编译。**
+![桌面效果，使用模拟数据](docs/images/croc-desktop.png)
 
-[下载源码 ZIP](https://github.com/Hziibepacient/croc-token-hud/archive/refs/heads/main.zip) · [使用说明、数据限制和署名](CROC_README.md)
+**[下载最新预览版](https://github.com/Hziibepacient/croc-token-hud/releases/tag/croc-v1.4.0-beta.1) · [全部版本](https://github.com/Hziibepacient/croc-token-hud/releases) · [详细使用说明](CROC_README.md)**
 
-- 额度只读取本地日志，不联网、不提取登录凭据。没有新记录时不会伪造服务器最新余额。
-- 五档输出吞吐以 15 / 30 / 60 / 100 tok/s 为边界，对应 1 / 1 / 2 / 2 / 3 行，速度及密度平滑变化；恢复连接尾迹和移动速度线。
-- 休息与工作切换保留奶瓶数量；右键试播只改变动画，除非明确选择模拟额度。
-- 小底栏无标题、无进度条，可供其他角色复用；拖动角色移动，右键选择最新活动、当前对话或固定聊天，以及缩放和退出。
-- 浏览器版：Windows 双击 `StartCroc.cmd`，macOS / Linux 运行 `python3 croc.py`。与桌面版共用同一套规则（`croc_scene.py`）。完整素材随源码提供。
+> 当前提供的是 Windows **源码预览包**，需要 Python 3.10+ 和 Windows .NET Framework 4.x。首次运行自动编译窗口；没有内置 Python，不是免安装运行包。新版发布为预览版时，请在“全部版本”页面下载。
 
+## 它能做什么
 
----
+- **桌面悬浮**：透明、置顶、无边框；拖动移动，滚轮缩放，托盘恢复隐藏窗口。
+- **看输出速度**：五档动画、连续变速，便便先从身体后方出发，再向上下分道。
+- **看额度和缓存**：紧凑底栏显示所选周期剩余额度、重置时间、平均输出速度及最近响应缓存命中率。
+- **选择观察范围**：跟随最新活动、跟随当前 Codex 对话，或者固定一个聊天。
+- **更换角色**：右键选择已有形象；通过本地工作台上传 ZIP、预览八个动作、确认后添加。
+- **自己做角色**：复制完整指令，把一张或多张参考图交给具备生图能力的 Codex，生成可导入的角色包。
 
-以下为原项目说明：
+## 三步启动
 
-# Codex Token HUD
+1. 在 [Releases](https://github.com/Hziibepacient/croc-token-hud/releases) 下载 `CrocToken-preview-source.zip`，完整解压到一个文件夹；也可直接 [下载仓库源码](https://github.com/Hziibepacient/croc-token-hud/archive/refs/heads/main.zip)。
+2. 确认已安装 Python 3.10+，并能在终端运行 `python --version`。使用新增角色和工作台图片预览前，在解压目录运行：
 
-## Start with supported applications
+   ```powershell
+   python -m pip install -r requirements-croc.txt
+   ```
 
-Direct logon HUD startup has been replaced by **Start with supported clients** (Windows menu: **随 Codex / CLI / IDE 启动**; also `Install.ps1`). A small user-session watcher waits for Codex Desktop or the shared native Codex backend used by CLI/IDE clients, including compatible VS Code, Cursor, Windsurf and derived integrations. An editor or terminal alone does not trigger it. While idle it does not start the HUD, collector or statistics server. Startup is debounced for about 2 seconds; after the last client exits, the watcher closes only its own HUD after 6–8 seconds. Manually opened HUDs are preserved; manually quitting suppresses relaunch until the clients have all closed and reopened. This copy's old Windows task migrates automatically.
+   该依赖用于本地图像处理。只使用原版鳄鱼时不需要安装它。
+3. 双击 **`StartCrocDesktop.cmd`**。打开 Codex、开始一个任务，再右键角色选择要观察的对话。
 
-Windows tracks a foreground Desktop chat where available; other client activity is explicitly labeled latest activity, with exact-ID pinning available for parallel chats. macOS/Linux retain their explicit latest-activity/exact-ID modes.
+首次启动会调用 Windows .NET Framework 编译器。请先完整解压，不要在 ZIP 里面直接双击脚本。手动启动后会一直显示在桌面；右键菜单可以隐藏或退出。
 
-Windows now stores data in `%USERPROFILE%\.codex-token-hud` so MSIX AppData redirection cannot hide the configuration from Task Scheduler. Existing layout, bindings and range choices migrate without deleting the originals; watcher registration is updated too. A custom `CODEX_TOKEN_HUD_HOME` must be accessible from both the client and the system task.
+## 动画和底栏怎么看
 
-Run the watcher on the log host for WSL/SSH and other hosts. Headless source installs use the dependency-free loopback dashboard and a systemd user service. All previously compatible Python environments also have a direct launcher when desktop autostart/systemd is absent:
-
-```sh
-python3 app_follow.py --enable
-python3 app_follow.py --enable --interface dashboard
-python3 app_follow.py --enable --client-executable /absolute/path/to/compatible-client
-python3 app_follow.py --run codex
-python3 app_follow.py --interface dashboard --run /absolute/path/to/compatible-client arg1 arg2
-python3 app_follow.py --disable
-```
-
-`--client-executable` accepts additional exact paths; `--run` passes the remaining command/arguments through unchanged. These support renamed/additional compatible clients without modifying Codex, IDE or shell settings. They do not add compatibility with another log format. Offline logs remain manually viewable; a cloud-only task has no observable local process or telemetry. See [compatibility](docs/COMPATIBILITY.md) for host requirements and verification limits.
-
-[English](README.md) | [简体中文](README.zh-CN.md)
-
-Local Codex output speed and input cache statistics, with floating desktop HUDs for Windows/macOS/Linux, a portable browser dashboard, and terminal reports.
-
-**Source version: 1.3.0-beta.8.** Independent project, unaffiliated with OpenAI. Reads local logs without changing Codex or uploading conversations.
-
-![Windows HUD](docs/images/hud.png)
-
-## Select a range
-
-Right-click the Windows strip or tray icon and open **区间统计：按时间或首尾消息…**. On macOS/Linux, use **Range stats** on the native strip, or start the dashboard directly.
-
-1. Select a local conversation by title and ID.
-2. Choose a start/end time, or search for the first and last user messages and select the matching timestamped results.
-3. Confirm to see weighted average `tok/s`, weighted cache hit rate, completed responses, output tokens, measured duration and telemetry coverage. The matching desktop HUD switches to the confirmed range too.
-
-A message range includes both boundary user messages and responses to the last message, ending before the next user message. A time range includes responses completed within the inclusive bounds, using the browser's local timezone. Repeated message text requires an explicit result selection.
-
-**Average speed = total output tokens of timed samples / total generation seconds. Cache fraction = total cached input tokens / total input tokens.** Missing timing/cache data is excluded separately, never treated as zero. Reasoning tokens already included in output are not added again. Available log boundaries exclude tool execution; request timing includes time to first token.
-
-Confirmed results are fixed snapshots. Confirm again to update, or use **返回最近响应** to restore the latest-response view. History is streamed on demand across resumed rollouts, without the live collector's 8 MiB tail limit.
-
-<details>
-<summary>Dashboard example (artificial conversation data)</summary>
-
-![Message range dashboard](docs/images/dashboard.jpg)
-
-</details>
-
-## Native macOS/Linux HUD
-
-![Portable native HUD](docs/images/overlay.png)
-
-Screenshot uses artificial data in macOS ARM64 CI. Linux uses the same layout with its native window backend.
-
-Download the matching `overlay-macos-x64`, `overlay-macos-arm64`, `overlay-linux-x64` or `overlay-linux-arm64` package from [GitHub Releases](https://github.com/drkang7/codex-token-hud/releases/tag/v1.3.0-beta.8). Development artifacts are also available from [successful CI runs](https://github.com/drkang7/codex-token-hud/actions). Extract the ZIP/tar.gz completely. On macOS, move **CodexTokenHud.app** to Applications and open it. On Linux, run `./CodexTokenHud/CodexTokenHud`. These packages include Python and Qt; no pip installation is required. The macOS beta is ad-hoc signed, not notarized; use the system's Open Anyway option if blocked.
-
-The native strip provides **tok/s**, **input cache hit rate**, model and sample time. Drag an empty area to move it, and an edge/corner or bottom-right grip to resize it. Layout persists. **Choose chat** searches titles or full IDs and pins a conversation. **Unpin and follow latest activity** follows the log that most recently recorded an event; it does not identify the foreground chat. Simultaneous latest timestamps require an explicit selection. The matching browser panel synchronizes pin/unpin and confirmed range results. **Refresh** rereads logs and acknowledges whether new counts exist. Tray/menu and repeat-launch recovery keep the strip accessible.
-
-Source alternative, using existing Python 3.10–3.14:
-
-```sh
-sh start-overlay.sh
-# macOS also provides a double-clickable StartOverlay.command
-# Or install the optional GUI dependency in your own virtual environment:
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements-overlay.txt
-python overlay.py
-python overlay.py --thread EXACT_THREAD_ID --language en
-```
-
-The script creates a private virtual environment and downloads Qt on first launch. Bundled apps work offline. State is saved in `overlay-runtime` under the platform's user-data directory, separate from the original Windows runtime. Readable Desktop/CLI/IDE or explicit `--log` inputs are supported. No accessibility permission is required. Source/browser entry points remain available for headless systems and older platforms.
-
-macOS uses a native floating panel that remains visible when the app is inactive, with Spaces/full-screen auxiliary settings. Linux prefers XWayland when available for positioning and stacking. Pure Wayland delegates position, restore and always-on-top behavior to the compositor; drag/resize still uses system operations. A desktop window rule may be required for persistent topmost behavior. See [platform requirements and limits](docs/COMPATIBILITY.md#native-macoslinux-desktop-strip).
-
-## Portable dashboard
-
-Use an existing **Python 3.10+ with SQLite**. No pip dependencies or installation required. Extract the full dashboard ZIP or source checkout, then run:
-
-```sh
-python3 -I -X utf8 dashboard.py
-sh start-dashboard.sh
-# Custom data directory or explicit offline files:
-python3 dashboard.py --codex-home /path/to/.codex
-python3 dashboard.py --log /path/to/rollout.jsonl --log /path/to/resumed.jsonl
-```
-
-On Windows:
-
-```powershell
-.\StartDashboard.ps1
-.\StartDashboard.ps1 -PythonExecutable 'C:\path\to\python.exe'
-```
-
-The dashboard works with compatible local Desktop/CLI/IDE logs on Python-supported Windows, macOS and Linux architectures. It is independent of window titles, UI language and desktop accessibility. Select conversations manually. **小窗** opens a separate browser mini-window movable/resizable through the OS. For an always-on-top macOS/Linux strip, use the native HUD above, with exact-ID pinning or explicit latest-activity following.
-
-The panel opened from a running Windows HUD also offers **将此对话固定到 Windows 状态栏**: bind by exact conversation ID and keep the strip above other applications. This enables CLI/IDE conversations and provides a fallback for temporarily unavailable desktop title recognition. Pinned and automatic layouts are stored separately. **解除固定，自动跟随桌面对话** restores automatic tracking.
-
-The HUD and tray menus always include **按对话 ID 固定状态栏…**, opening this panel for conversation selection. Unpinning keeps the strip visible while automatic discovery is pending, with **正在识别当前对话** and no measurements from the formerly pinned chat. The HUD remains independent of the followed window, so closing or recreating that window cannot destroy it.
-
-Starting the EXE again asks the existing instance to show its strip. You can also double-click the tray icon or choose **显示状态栏**. Startup shows a waiting strip before automatic discovery, and restores hidden/minimized launch settings without taking focus. Automatic mode hides when another app is foreground after following Codex; pin a conversation to keep it visible across apps. The diagnostics record Windows' actual visibility, topmost and minimized state.
-
-For WSL, SSH or headless hosts, use `python3 dashboard.py --no-browser --port 8765`. Forward the same port with `ssh -L 8765:127.0.0.1:8765 user@host`, then open the exact printed URL on your own computer. See [compatibility details](docs/COMPATIBILITY.md). The server binds loopback only, validates Host/Origin, requires a per-process local token, and uses no external assets. Do not share its link.
-
-Cloud-only conversations without readable local logs cannot be measured. Other compatible Python hosts have source entry points, but platform availability is distinct from actual hardware validation.
-
-## Native Windows HUD
-
-Windows ZIPs bundle an architecture-matching private Python runtime. Extract all files and launch `CodexTokenHud.exe`; put a local Codex Desktop chat in the foreground. Keep all source modules, `web/` and `python/` beside the EXE.
-
-- Windows 10/11 x64 + .NET Framework 4.8: locally verified.
-- Windows ARM64: matching Python packaging available; AnyCPU HUD requires compatible Framework 4.8.1 or emulation. Not hardware-verified here.
-- Windows x86: 32-bit Python packaging available, mainly for browser/terminal use. Codex Desktop may not support a 32-bit OS.
-
-The EXE is unsigned and requests the highest available user privilege for an elevated Codex window; administrator accounts may see UAC. Drag the strip's middle to move it and an edge/corner to resize it. Layout persists. Application following is available from the tray or `Install.ps1`; `Uninstall.ps1` removes only this copy's watcher registration/shortcut and preserves saved data. Exiting the HUD stops its collector and local dashboard service.
-
-**立即刷新数据** now rescans rollouts, follows newly resumed segments even if the database path is stale, rereads the latest file and returns visible pending/success/no-new-count/error feedback. An unresponsive collector reconnects. Refresh cannot cause Codex to publish usage that has not yet been recorded.
-
-## Latest-response measurements
-
-| Field | Meaning |
+| 画面 | 表达的意思 |
 | --- | --- |
-| Model | Latest recorded local model, or models included in a confirmed range |
-| `tok/s` | Output tokens / generation seconds for the latest completed response |
-| Cache | Cached input tokens / total input tokens for that response |
-| Freshness | Sample time; model switches, new turns without counts, expired samples and lost heartbeat hide old values |
-| This chat's weekly allowance | Unavailable: no attributable per-thread debit or weekly denominator is exposed |
+| 左侧奶瓶 | 所选额度周期的剩余百分比，每瓶约 20%，最后一瓶显示零头 |
+| 角色姿势 | 休息、工作、思考、喝奶、松口气等状态 |
+| 右侧便便 | 最近完成响应的平均输出吞吐；速度越快，移动越快、数量越密 |
+| 下方四个值 | 剩余额度百分比 / 重置时间 / 输出 `tok/s` / 缓存命中率 |
 
-Counts arrive after response completion. This is a response average, not a live per-token counter. The collector polls every 100 ms, publishes heartbeat at least every second, and rediscovers log segments every two seconds (immediately on manual refresh). The native strip updates every 150 ms and checks the active chat about every 350 ms. The browser polls every second. Samples older than 15 minutes are hidden in the live view; confirmed historical ranges remain valid snapshots.
+五档边界为 **15、30、60、100 tok/s**，对应 **1 / 1 / 2 / 2 / 3 行**。行数和运动表达速度，不表达历史累计 Token 数。切换工作状态、角色或试播速度，不会把剩余奶瓶自动补满。
 
-## Terminal reports
+重置时间使用本机时间；当天显示时分，跨日显示月日，完整时间可在右键菜单查看。没有可用额度或计数时显示未知或等待更新，不会补成 100%。
 
-```sh
-python3 stats.py --list
-python3 stats.py --thread THREAD_ID --start '2026-10-09T10:00:00+08:00' --end '2026-10-09T11:00:00+08:00'
-python3 stats.py --thread THREAD_ID --messages 'message fragment'
-python3 stats.py --thread THREAD_ID --first FIRST_MESSAGE_ID --last LAST_MESSAGE_ID
-```
+## 右键菜单
 
-Output is local JSON. `--messages` displays user excerpts for selection; do not publish that output.
+- **选择观察的对话**：最新活动跟随最近写入本地日志的聊天；当前对话识别 Codex 窗口中正在查看的聊天；也可固定一个聊天。
+- **额度周期**：自动选择，或选择本地实际记录过的周期，例如五小时、每周。没有记录的周期不会凭空推算。
+- **更换形象**：直接切换已添加的角色；点“添加新形象…”打开本地角色工作台。
+- **其他操作**：查看模型、缓存和计数来源，调整大小，试播动画，置顶、隐藏或退出。
 
-## Data, development and validation
+当前对话识别依赖 Windows 本地窗口信息。标题重复、窗口无法识别或匹配不唯一时会等待，不会偷偷切成其他聊天；可以改用最新活动或固定聊天。
 
-The default Codex home is `~/.codex`; `CODEX_HOME`, `--codex-home`, archived rollouts and explicit offline files are supported. The Windows HUD also supports Python/path overrides in `settings.example.json`. Derived statistics and layouts live in LocalAppData on Windows, Application Support on macOS, and XDG state on Linux; `CODEX_TOKEN_HUD_HOME` overrides the location. User excerpts are indexed in memory for selection, not saved with the range result. Do not upload runtime data, real logs, authentication files or screenshots containing private chat text. See [privacy](PRIVACY.md).
+## 做一个自己的角色
+
+在本地工作台上方，按这三步操作：
+
+1. **准备参考图**：一张或多张照片、插画均可。多张图请告诉 Codex 主参考是哪张，其他图参考什么。
+2. **在 Codex 中生成**：复制工作台里的完整指令，连同参考图一起发送。也可以把制作工具包附给 Codex，里面包含格式说明、校验脚本和可选 skill。无需自己写代码或安装 skill。
+3. **回来导入 ZIP**：下载 Codex 生成的 ZIP，直接上传到工作台，无需解压。检查动作、脚底和喷射位置，点击“添加并使用”。
+
+八个动作是：**休息、下蹲、工作、后坐、松口气、思考、喝奶、起跳**。保留参考角色的画风，像素角色使用最近邻采样。新角色沿用奶瓶、便便和数据栏，使用通用呼吸、弹跳和后坐力；原鳄鱼继续保留专属精细动画。
+
+- [完整 Codex 生成指令](docs/Codex角色包生成指令.md)
+- [角色包格式、坐标及校验要求](docs/character-pack-v1.md)
+- [项目内可选 skill](skills/croc-character-pack/SKILL.md)
+
+角色包使用八张 **1024×1024 透明 PNG**、`character.json` 和总览图。JPG 不支持所需透明背景，不接受直接导入。只生成一张展示图不等于完成角色包；请让 Codex 继续完成八个动作和打包。
+
+## 性能与本地数据
+
+1024 像素图片是制作原图，桌面导入时会转换为 **416×416** 的运行素材，只加载当前角色；工作台使用 416 像素动作预览及 96 像素缩略图，预览最多 30 帧每秒，页面隐藏时暂停绘制。八帧 416 像素 RGBA 数据约 5.28 MiB，这不是整个进程或显存的占用值。
+
+Token、速度、缓存及额度快照读取本机 Codex 日志；工作台只监听 `127.0.0.1`，需要本次启动的访问令牌。角色、选择和布局默认保存在 `%USERPROFILE%\.codex-token-hud\croc-desktop`，也支持 `CODEX_TOKEN_HUD_HOME`。应用不会上传聊天或角色；使用 Codex 生图是用户在 Codex 内单独进行的操作。
+
+## 数据边界
+
+- **速度不是逐 Token 的瞬时测速**：计数通常在一次模型响应完成后写入，本工具使用最近完成响应的平均输出速度。任务可能直到结束后才有新数据。
+- **额度是最后一条本地快照**：不是实时联网余额；过重置时间但未收到新记录时会等待更新，不自动回满。
+- **额度属于账号窗口**：不能据此推算某个聊天单独花掉了多少套餐额度。缓存命中率也不直接等于省下的金额。
+- **中转站余额尚未接入**：本版没有中转站余额或到期时间查询，不根据 Token 数或模型价格伪造美元余额。
+- **桌面角色功能面向 Windows**：保留的浏览器场景、原项目状态栏和 macOS/Linux 工具不等于已经支持本版角色工作台的完整桌面体验。
+
+## 本地开发与打包
+
+以下命令面向完整 Git 仓库。Release 源码预览包用于直接运行；进行完整开发和测试时请克隆仓库。
 
 ```powershell
-.\Build.ps1
-.\Test.ps1
-.\Package.ps1 -Architecture x64
-# Cross-build candidates without running the target Python on an incompatible host:
-.\Package.ps1 -Architecture arm64 -SkipTests -SkipSmokeTest
-.\Package.ps1 -Architecture x86 -SkipTests -SkipSmokeTest
+python -m pip install -r requirements-croc.txt
+python -m unittest discover -s tests -p "test_*.py"
+python BuildCharacterGuide.py --check
+python PackageCroc.py
 ```
 
-```sh
-python3 -m unittest discover -s tests -p 'test_*.py'
-python3 PackageDashboard.py
-```
+源码预览包输出到 `dist/CrocToken-preview-source.zip`，同时生成 SHA256 校验文件。生成指令、角色规范和 skill 来自同一份构建脚本；修改规范后运行 `python BuildCharacterGuide.py` 同步。
 
-Windows builds use an existing .NET Framework compiler, preferring Framework64 and falling back to Framework, with AnyCPU output. Stop this copy before replacing its EXE, or build to a separate output directory. Packaging uses an explicit allowlist and pinned official Python download digests. `-SkipTests -SkipSmokeTest` avoids repeating broad checks after appropriate targeted validation. CI includes Windows tests/build and macOS/Linux parsing/range/local-server checks; configured jobs are not proof of a passed run.
+本项目的 Croc 发布流程会运行 Python 测试、编译桌面窗口、执行原生自检，再从明确的公开文件清单打包，并在 Releases 提供源码包与制作工具包。真实日志、访问令牌、机器配置及原始角色参考图不进入发布包。
 
-For native overlay development, install `requirements-overlay.txt` and `pyinstaller==6.22.3`, run `python -m unittest discover -s tests -p 'test_overlay*.py'` in a graphical desktop, then `python PackageOverlay.py` on the target OS. CI includes Cocoa/X11 window checks and bundled launches for macOS/Linux x64/ARM64. See [third-party notices](THIRD_PARTY.md) for the optional Qt dependencies.
+## 署名与许可
 
-[Compatibility](docs/COMPATIBILITY.md) · [Validation](docs/VALIDATION.md) · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+交互设计与维护：**[Hziibepacient](https://github.com/Hziibepacient)**。桌面动效等协作贡献参见 [Sid-Qin](https://github.com/Sid-Qin) 与仓库贡献记录。
+
+基于 **[drkang7/codex-token-hud](https://github.com/drkang7/codex-token-hud)** 开发，保留原作者及贡献者的版权声明与 [MIT 许可证](LICENSE)。原项目提供日志读取、统计及基础工具；本项目增加桌面角色表达、角色包规范与本地角色工作台。角色素材由参考图及 AI 辅助生成、整理，外部素材的授权不因代码采用 MIT 而自动改变。
+
+这是独立社区项目，与 OpenAI 无隶属关系。欢迎通过 [Issues](https://github.com/Hziibepacient/croc-token-hud/issues) 反馈问题，通过 Pull Request 一起改进。反馈时请说明 Windows/Python 版本、角色及缩放、跟随模式和复现步骤，截图中避免包含聊天内容或访问令牌。

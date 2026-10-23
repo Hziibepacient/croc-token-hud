@@ -8,6 +8,7 @@ import time
 from croc_scene import SceneFeed, migrate_layout
 from dashboard import Dashboard, data_directory
 from metrics import atomic_json
+from character_workbench import start_workbench
 
 HEARTBEAT_SECONDS = 1  # The window treats scenes older than 5 s as disconnected.
 
@@ -51,6 +52,7 @@ def main():
                         '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.Web.Extensions.dll', str(source)], check=True, creationflags=subprocess.CREATE_NO_WINDOW)
     feed = SceneFeed(Dashboard(args.codex_home, runtime), runtime / 'selection.json')
     process = subprocess.Popen([str(exe), str(root), str(runtime)] + (['--demo'] if args.demo else []))
+    workbench = start_workbench(runtime)
     written, written_at = None, 0
     current_reader, next_reader_attempt = None, 0
     try:
@@ -80,6 +82,8 @@ def main():
                     pass  # A brief Windows file-sharing collision is retried next poll.
             time.sleep(.1)
     finally:
+        workbench.shutdown()
+        workbench.server_close()
         if current_reader is not None and current_reader.poll() is None:
             current_reader.terminate()
         if process.poll() is None:

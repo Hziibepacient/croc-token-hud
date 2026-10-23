@@ -39,6 +39,11 @@ class CrocDesktop : Form {
     const int Crouch=0, Recoil=1, Relief=2, Think=3, Drink=4, Jump=5;
     Bitmap bottleScaled,bottleEmptyScaled,poopScaled;
     double spriteScale=0;
+    string characterId="builtin-croc",activePose="rest";
+    bool pixelArt=false;
+    DateTime lastCharacterRead=DateTime.MinValue;
+    Dictionary<string,object> characterOutlets=new Dictionary<string,object>();
+    static readonly string[] ExtraPoses={"crouch","recoil","relief","think","drink","jump"};
     readonly string[] barText=new string[4];
     readonly Font[] barFont=new Font[4];
     // The frame is drawn straight into a premultiplied DIB that stays selected
@@ -73,7 +78,7 @@ class CrocDesktop : Form {
     float squash=0, squashVel=0, lean=0, effort=0, toolsBlend=0, quotaPercent=0, fillShown=1;
     readonly float[] bottleScale=new float[5], bottleVel=new float[5];
     readonly Random random=new Random();
-    class Particle { public float X,Y,TargetY,Speed,Age,Hop; public int Index; }
+    class Particle { public float X,Y,OriginX,OriginY,TargetY,Speed,Age,Hop; public int Index; }
     class Drop { public float X,Y,VX,VY,Age; }
     class Puff { public float X,Y,Age,Size; }
     // Scene geometry in the 420 x 244 logical canvas.
@@ -99,6 +104,7 @@ class CrocDesktop : Form {
         string art=Path.Combine(root,"web/assets/desktop");
         rest=Image.FromFile(Path.Combine(art,"rest.png"));work=Image.FromFile(Path.Combine(art,"work.png"));poses=Image.FromFile(Path.Combine(art,"poses.png"));
         bottle=Image.FromFile(Path.Combine(art,"bottle.png"));bottleEmpty=Image.FromFile(Path.Combine(art,"bottle-empty.png"));
+        CheckCharacter();
         var area=Screen.PrimaryScreen.WorkingArea;Location=new Point(area.Right-450,area.Bottom-230);
         try{var saved=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"layout.json")));scale=Convert.ToDouble(saved["scale"]);Location=new Point(Convert.ToInt32(saved["x"]),Convert.ToInt32(saved["y"]));}catch{}
         scale=Math.Max(.7,Math.Min(2,scale));ClientSize=new Size((int)(420*scale),(int)(244*scale));
@@ -156,7 +162,18 @@ class CrocDesktop : Form {
                     if(((ToolStripMenuItem)currentMenu.DropDownItems[0]).Checked||!((ToolStripMenuItem)currentMenu.DropDownItems[1]).Checked||((ToolStripMenuItem)currentMenu.DropDownItems[3]).Checked)throw new Exception("Current-chat follow check invalid");
                 }
                 Choose("");
-                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,cacheInDataBar=true,quotaPeriodMenu=true,autoFollowChecked=true,currentChatMode=true,poopMotion=true,width=Width,height=Height}));
+                int previousBottles=bottles;string previousCharacter=characterId;
+                using(var characters=CharacterMenu()){
+                    if(characters.DropDownItems.Count<3)throw new Exception("Character menu missing");
+                    if(previousCharacter!="builtin-croc"){
+                        if(!SelectedCharacter().Equals(previousCharacter))throw new Exception("Character preference missing");
+                        CurrentFrame();PointF point=OutletPoint();if(float.IsNaN(point.X)||point.X<0||point.X>=EndX)throw new Exception("Invalid character outlet");
+                        SelectCharacter("builtin-croc");if(characterId!="builtin-croc")throw new Exception("Cannot restore original character");
+                        SelectCharacter(previousCharacter);if(characterId!=previousCharacter)throw new Exception("Cannot switch imported character");
+                        if(bottles!=previousBottles)throw new Exception("Character switch changed bottles");
+                    }
+                }
+                File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,cacheInDataBar=true,quotaPeriodMenu=true,autoFollowChecked=true,currentChatMode=true,poopMotion=true,characterMenu=true,customCharacter=characterId!="builtin-croc",width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
         FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();poses.Dispose();bottle.Dispose();bottleEmpty.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
@@ -175,9 +192,15 @@ class CrocDesktop : Form {
         return result;
     }
     // A strip of square frames, side by side.
-    static Bitmap[] Frames(Image strip,double factor){
+    static Bitmap[] Frames(Image strip,double factor,bool nearest=false){
         int count=Math.Max(1,strip.Width/strip.Height);var frames=new Bitmap[count];
-        for(int i=0;i<count;i++)frames[i]=Resample(strip,new Rectangle(i*strip.Height,0,strip.Height,strip.Height),SpriteSize,SpriteSize,factor);
+        for(int i=0;i<count;i++){
+            if(!nearest)frames[i]=Resample(strip,new Rectangle(i*strip.Height,0,strip.Height,strip.Height),SpriteSize,SpriteSize,factor);
+            else{
+                frames[i]=new Bitmap(Math.Max(1,(int)Math.Ceiling(SpriteSize*factor)),Math.Max(1,(int)Math.Ceiling(SpriteSize*factor)),PixelFormat.Format32bppPArgb);
+                using(var g=Graphics.FromImage(frames[i])){g.InterpolationMode=InterpolationMode.NearestNeighbor;g.PixelOffsetMode=PixelOffsetMode.Half;g.DrawImage(strip,new Rectangle(0,0,frames[i].Width,frames[i].Height),i*strip.Height,0,strip.Height,strip.Height,GraphicsUnit.Pixel);}
+            }
+        }
         return frames;
     }
     // Soft-serve swirl drawn as vectors at 4x and resampled once, with the same
@@ -212,7 +235,7 @@ class CrocDesktop : Form {
     void EnsureSprites(){
         if(spriteScale==scale)return;
         DisposeSprites();spriteScale=scale;
-        restFrames=Frames(rest,scale);workFrames=Frames(work,scale);poseFrames=Frames(poses,scale);
+        restFrames=Frames(rest,scale,pixelArt);workFrames=Frames(work,scale,pixelArt);poseFrames=Frames(poses,scale,pixelArt);
         bottleScaled=Resample(bottle,20,30,scale);bottleEmptyScaled=Resample(bottleEmpty,20,30,scale);
         poopScaled=BuildPoop(scale);
     }
@@ -295,6 +318,7 @@ class CrocDesktop : Form {
         design.DropDownItems.Add("交互设计：Hziibepacient").Enabled=false;
         design.DropDownItems.Add("数据基础：drkang7 / Codex Token HUD · MIT").Enabled=false;
         menu.Items.Add(design);
+        menu.Items.Add(CharacterMenu());
         menu.Items.Add(ThreadMenu());
         var sizes=new ToolStripMenuItem("整体大小（也可滚轮调整）");
         foreach(double size in new[]{.7,1,1.3,1.6,2}){double chosen=size;sizes.DropDownItems.Add((size*100)+"%",null,(s,e)=>ResizeScene(chosen));}menu.Items.Add(sizes);
@@ -306,6 +330,62 @@ class CrocDesktop : Form {
         var top=new ToolStripMenuItem("始终置顶");top.Checked=TopMost;top.Click+=(s,e)=>{TopMost=!TopMost;};menu.Items.Add(top);
         menu.Items.Add(visibleScene?"隐藏（托盘可恢复）":"显示",null,(s,e)=>{visibleScene=!visibleScene;if(visibleScene){Show();Render(true);}else Hide();});
         menu.Items.Add("退出",null,(s,e)=>BeginInvoke(new Action(Close)));return menu;
+    }
+    static Image ReadSprite(string path){using(var image=Image.FromFile(path)){return new Bitmap(image);}}
+    static bool ValidCharacterId(string id){return id!=null&&System.Text.RegularExpressions.Regex.IsMatch(id,@"\A[a-z0-9][a-z0-9-]{0,47}\z");}
+    string SelectedCharacter(){
+        try{return Convert.ToString(json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"character-selection.json")))["id"]);}catch{return "builtin-croc";}
+    }
+    void SelectCharacter(string id){
+        if(!ValidCharacterId(id))return;
+        string path=Path.Combine(runtime,"character-selection.json"),temporary=path+"."+Guid.NewGuid().ToString("N")+".tmp";
+        File.WriteAllText(temporary,json.Serialize(new{id=id}));
+        if(File.Exists(path))File.Replace(temporary,path,null);else File.Move(temporary,path);
+        lastCharacterRead=DateTime.MinValue;CheckCharacter();Render(true);
+    }
+    void CheckCharacter(){
+        if((DateTime.UtcNow-lastCharacterRead).TotalSeconds<.5)return;lastCharacterRead=DateTime.UtcNow;
+        string id=SelectedCharacter();if(id==characterId)return;
+        Image nextRest=null,nextWork=null,nextPoses=null;
+        try{
+            if(!ValidCharacterId(id))throw new Exception("角色标识无效");
+            string art=id=="builtin-croc"?Path.Combine(root,"web/assets/desktop"):Path.Combine(runtime,"characters",id,"desktop");
+            var outlets=new Dictionary<string,object>();bool nextPixels=false;
+            if(id!="builtin-croc"){
+                var render=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(art,"render.json")));
+                outlets=(Dictionary<string,object>)render["outlets"];object pixels;nextPixels=render.TryGetValue("pixel_art",out pixels)&&pixels is bool&&(bool)pixels;
+                foreach(string pose in new[]{"rest","crouch","work","recoil","relief","think","drink","jump"}){
+                    var xy=(IList)outlets[pose];if(xy.Count!=2)throw new Exception("角色定位无效");
+                    foreach(object value in xy){double n=Convert.ToDouble(value);if(double.IsNaN(n)||double.IsInfinity(n)||n<0||n>=1)throw new Exception("角色定位超出画布");}
+                }
+            }
+            nextRest=ReadSprite(Path.Combine(art,"rest.png"));nextWork=ReadSprite(Path.Combine(art,"work.png"));nextPoses=ReadSprite(Path.Combine(art,"poses.png"));
+            if(nextRest.Height!=416||nextWork.Height!=416||nextPoses.Height!=416||nextPoses.Width!=416*6||nextRest.Width%416!=0||nextWork.Width%416!=0)throw new Exception("角色帧尺寸无效");
+            rest.Dispose();work.Dispose();poses.Dispose();rest=nextRest;work=nextWork;poses=nextPoses;
+            nextRest=nextWork=nextPoses=null;characterOutlets=outlets;characterId=id;pixelArt=nextPixels;spriteScale=-1;
+            particles.Clear();puffs.Clear();drops.Clear();poseSwitchAt=-10;
+        }catch(Exception error){
+            if(nextRest!=null)nextRest.Dispose();if(nextWork!=null)nextWork.Dispose();if(nextPoses!=null)nextPoses.Dispose();
+            if(id!="builtin-croc"){
+                // Keep the last successfully loaded character if a candidate fails.
+                string path=Path.Combine(runtime,"character-selection.json"),tmp=path+".fallback.tmp";
+                try{File.WriteAllText(tmp,json.Serialize(new{id=characterId}));if(File.Exists(path))File.Replace(tmp,path,null);else File.Move(tmp,path);}catch{}
+                if(tray!=null)tray.ShowBalloonTip(4000,"角色未能加载",error.Message,ToolTipIcon.Warning);
+            }
+        }
+    }
+    ToolStripMenuItem CharacterMenu(){
+        var menu=new ToolStripMenuItem("更换形象");
+        var builtinItem=new ToolStripMenuItem("原版鳄鱼");builtinItem.Checked=characterId=="builtin-croc";builtinItem.Click+=(s,e)=>SelectCharacter("builtin-croc");menu.DropDownItems.Add(builtinItem);
+        string folder=Path.Combine(runtime,"characters");
+        if(Directory.Exists(folder))foreach(string dir in Directory.GetDirectories(folder)){
+            string id=Path.GetFileName(dir);if(!ValidCharacterId(id)||!File.Exists(Path.Combine(dir,"desktop/render.json")))continue;
+            try{var m=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(dir,"character.json")));var item=new ToolStripMenuItem(Convert.ToString(m["name"]));item.Checked=characterId==id;item.Click+=(s,e)=>SelectCharacter(id);menu.DropDownItems.Add(item);}catch{}
+        }
+        menu.DropDownItems.Add(new ToolStripSeparator());menu.DropDownItems.Add("添加新形象…",null,(s,e)=>{
+            try{var descriptor=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"workbench.json")));string url=Convert.ToString(descriptor["url"]);Uri address;if(!Uri.TryCreate(url,UriKind.Absolute,out address)||address.Scheme!="http"||address.Host!="127.0.0.1")throw new Exception("工作台地址无效");System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url){UseShellExecute=true});}
+            catch(Exception error){MessageBox.Show("无法打开本地工作台，请重新启动桌面鳄鱼。\n"+error.Message);}
+        });return menu;
     }
     string PinnedThread(){
         try{var saved=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"selection.json")));
@@ -342,6 +422,7 @@ class CrocDesktop : Form {
         particles.Clear();lanes=0;demoUntil=0;lastRun="";
     }
     void Tick(){
+        CheckCharacter();
         var now=DateTime.UtcNow;float dt=(float)Math.Min(.05,(now-previous).TotalSeconds);previous=now;
         if((now-lastRead).TotalSeconds>.09){lastRead=now;try{state=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"scene.json")));}catch{}}
         double seconds=demoSeconds;
@@ -400,7 +481,9 @@ class CrocDesktop : Form {
         // Every poop is a shot: it leaves fast, and the body, tail and bottles take
         // the recoil. Single shots kick visibly; a steady stream becomes a held
         // forward push with a shudder, so kicks shrink as the shot rate rises.
-        float speed=(EndX-ButtX)*motion;
+        CurrentFrame();
+        PointF outlet=OutletPoint();
+        float speed=Math.Max(45,EndX-outlet.X)*motion;
         float shotRate=emitting?Math.Max(1,lanes)*speed/Math.Max(17,smoothSpacing):0;
         float kick=1/(1+.13f*shotRate);
         for(int lane=0;lane<lanes&&lane<3;lane++){
@@ -408,11 +491,11 @@ class CrocDesktop : Form {
             laneEmission[lane]+=speed*dt/Math.Max(17,smoothSpacing);
             while(laneEmission[lane]>=1){
                 laneEmission[lane]-=1;
-                particles.Add(new Particle{X=ButtX+recoil,Y=ButtY,TargetY=LaneY[lane],Speed=speed*1.9f,Index=particles.Count+lane});
+                particles.Add(new Particle{X=outlet.X,Y=outlet.Y,OriginX=outlet.X,OriginY=outlet.Y,TargetY=outlet.Y+(LaneY[lane]-ButtY),Speed=speed*1.9f,Index=particles.Count+lane});
                 recoilVel-=210*kick;tailVel+=220*kick;squashVel-=.9f*kick;
                 if(kick>.55f)recoilPoseUntil=clock+.13;
                 for(int i=0;i<5;i++)bottleTiltVel[i]+=((float)random.NextDouble()*2-1)*55*kick;
-                if(clock-lastPuff>.05){lastPuff=clock;puffs.Add(new Puff{X=ButtX+4+recoil,Y=ButtY-2+(float)random.NextDouble()*4,Size=.8f+.4f*kick});}
+                if(clock-lastPuff>.05){lastPuff=clock;puffs.Add(new Puff{X=outlet.X+4,Y=outlet.Y-2+(float)random.NextDouble()*4,Size=.8f+.4f*kick});}
             }
         }
         squashVel+=(-170*squash-13*squashVel)*dt;squash+=squashVel*dt;squash=Math.Max(-.12f,Math.Min(.12f,squash));
@@ -431,7 +514,7 @@ class CrocDesktop : Form {
         foreach(var p in particles){
             p.Age+=dt;float desired=emitting?speed:p.Speed;p.Speed+=(desired-p.Speed)*blend;p.X+=p.Speed*dt;
             // Fan out from the butt into the lane over the first 46 px, then hop along it.
-            float k=Clamp01((p.X-ButtX)/46f);p.Y=ButtY+(p.TargetY-ButtY)*k*k*(3-2*k);
+            float k=Clamp01((p.X-p.OriginX)/46f);p.Y=p.OriginY+(p.TargetY-p.OriginY)*k*k*(3-2*k);
             p.Hop+=p.Speed*dt/24f*(float)Math.PI;
         }
         particles.RemoveAll(p=>p.X>EndX+14);
@@ -452,7 +535,7 @@ class CrocDesktop : Form {
         double t=clock-blinkStart;
         return Math.Max(Lid(t),doubleBlink&&t>=.22?Lid(t-.22):0);
     }
-    Bitmap Pose(int index){return poseFrames.Length>index?poseFrames[index]:restFrames[0];}
+    Bitmap Pose(int index){activePose=ExtraPoses[index];return poseFrames.Length>index?poseFrames[index]:restFrames[0];}
     Bitmap CurrentFrame(){
         restShown=false;
         // Pose changes: crouch, then airborne, then the new pose.
@@ -464,7 +547,7 @@ class CrocDesktop : Form {
                 // A full-speed stream holds the straining face; slower shots flash it.
                 if(effort>.75f||clock<recoilPoseUntil)return Pose(Recoil);
                 int best=0;for(int i=1;i<TailAngles.Length&&i<workFrames.Length;i++)if(Math.Abs(TailAngles[i]-tail)<Math.Abs(TailAngles[best]-tail))best=i;
-                return workFrames[Math.Min(best,workFrames.Length-1)];
+                activePose="work";return workFrames[Math.Min(best,workFrames.Length-1)];
             }
             if(clock<reliefUntil)return Pose(Relief);
             if(clock<drinkUntil)return Pose(Drink);
@@ -472,7 +555,7 @@ class CrocDesktop : Form {
         }
         if(clock<reliefUntil)return Pose(Relief);
         if(clock<drinkUntil)return Pose(Drink);
-        restShown=true;
+        restShown=true;activePose="rest";
         int cycle=restFrames.Length-1,step=(int)((clock-pickStart)*15);
         return cycle>0&&step>=0&&step<cycle*pickLoops?restFrames[1+step%cycle]:restFrames[0];
     }
@@ -548,7 +631,7 @@ class CrocDesktop : Form {
         float w=PoopW,h=PoopH;
         using(var shadow=new SolidBrush(Color.FromArgb(34,70,50,20)))
         foreach(var p in particles){
-            float k=Clamp01((p.X-ButtX)/46f);if(k<.15f)continue;
+            float k=Clamp01((p.X-p.OriginX)/46f);if(k<.15f)continue;
             float hop=(float)Math.Abs(Math.Sin(p.Hop));
             float sw=w*(.8f-.25f*hop*k);g.FillEllipse(shadow,p.X-sw/2,p.Y-1.5f,sw,3.2f);
         }
@@ -556,14 +639,14 @@ class CrocDesktop : Form {
             using(var line=new Pen(Color.FromArgb((int)(40+70*effort),186,140,84),1.3f)){
                 line.StartCap=line.EndCap=LineCap.Round;
                 foreach(var p in particles){
-                    if(p.X<ButtX+40)continue;
+                    if(p.X<p.OriginX+40)continue;
                     float len=6+10*effort,x=p.X-w/2-3;
                     g.DrawLine(line,x-len,p.Y-h*.55f,x,p.Y-h*.55f);g.DrawLine(line,x-len*.6f,p.Y-h*.25f,x-1,p.Y-h*.25f);
                 }
             }
         }
         foreach(var p in particles){
-            float k=Clamp01((p.X-ButtX)/46f);
+            float k=Clamp01((p.X-p.OriginX)/46f);
             float hop=(float)Math.Abs(Math.Sin(p.Hop))*k;
             // Squash on landing, stretch in the air, and pop in with a slight overshoot.
             float contact=Clamp01(hop*3);float sy=.84f+.16f*contact,sx=1+(1-sy)*.9f;
@@ -588,19 +671,28 @@ class CrocDesktop : Form {
             }
         }
     }
-    void DrawCroc(Graphics g){
-        var saved=g.Save();
+    Matrix BodyTransform(){
         float breath=(float)Math.Sin(clock*2*Math.PI/(working?1.3-.5*effort:3.4));
         float amp=working?.011f:.017f;
         float sy=1+squash+amp*breath,sx=1-squash*.6f-amp*.4f*breath;
         float bob=working?(float)Math.Sin(clock*(6+6*effort))*(.5f+.8f*effort):0;
-        // A steady stream shudders the body slightly.
         float shudder=emitting?(float)Math.Sin(clock*47)*.5f*effort:0;
-        g.TranslateTransform(PivotX+recoil+shudder,PivotY+bob+hopY);g.RotateTransform(lean+recoil*.35f);g.ScaleTransform(sx,sy);g.TranslateTransform(-PivotX,-PivotY);
+        var matrix=new Matrix();matrix.Translate(PivotX+recoil+shudder,PivotY+bob+hopY);matrix.Rotate(lean+recoil*.35f);matrix.Scale(sx,sy);matrix.Translate(-PivotX,-PivotY);return matrix;
+    }
+    PointF OutletPoint(){
+        PointF point=new PointF(ButtX,ButtY);
+        if(characterId!="builtin-croc"){
+            var xy=(IList)characterOutlets[activePose];point=new PointF(SpriteX+(float)Convert.ToDouble(xy[0])*SpriteSize,SpriteY+(float)Convert.ToDouble(xy[1])*SpriteSize);
+        }
+        var points=new[]{point};using(var matrix=BodyTransform())matrix.TransformPoints(points);return points[0];
+    }
+    void DrawCroc(Graphics g){
+        var saved=g.Save();using(var matrix=BodyTransform())g.MultiplyTransform(matrix);
         var box=new RectangleF(SpriteX,SpriteY,SpriteSize,SpriteSize);
-        g.DrawImage(CurrentFrame(),box);
+        var interpolation=g.InterpolationMode;if(pixelArt)g.InterpolationMode=InterpolationMode.NearestNeighbor;
+        g.DrawImage(CurrentFrame(),box);g.InterpolationMode=interpolation;
         // Only the resting face blinks; the other poses draw their own eyes.
-        float closure=restShown?Blink():0;
+        float closure=restShown&&characterId=="builtin-croc"?Blink():0;
         if(closure>.02f){
             var eyes=RestEyes;
             using(var lid=new Pen(Outline,2.6f)){

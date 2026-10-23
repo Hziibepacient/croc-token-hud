@@ -1,3 +1,15 @@
+# Croc source preview releases
+
+For this fork's desktop character packages, update `VERSION`, the current download link in `README.md`, `CHANGELOG.md`, and `docs/releases/croc-v<VERSION>.md`. A push to main changing VERSION or the Croc release workflow starts `.github/workflows/croc-release.yml`. This is a publication action and requires the owner's authorization.
+
+The dedicated Windows job tests Python, compiles and smoke-tests original/imported/extracted native windows, builds explicit-allowlist source and Codex maker ZIPs, and publishes them as a prerelease named `croc-v<VERSION>` only after these checks pass. Runtime records, machine settings, original references and downloaded binaries must not be uploaded. Do not claim CI or release publication succeeded until GitHub confirms it.
+
+The packages require local Python; they are not bundled installers. Character PNGs supplied by individual users are not automatically included. Use an isolated synthetic preview image for the project README.
+
+The inherited upstream release workflow below concerns the original HUD packages, not the Croc source preview release.
+
+---
+
 # Releasing
 
 1. Update VERSION, CHANGELOG.md, README download examples, and this release's validation record. Keep the release marked beta until compatibility has been exercised beyond one machine.

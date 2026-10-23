@@ -8,7 +8,12 @@ def main():
     root = Path(__file__).resolve().parent
     output = root / 'dist' / 'CrocToken-preview-source.zip'
     output.parent.mkdir(exist_ok=True)
-    files = ['croc.py', 'croc_desktop.py', 'local_quota.py', 'CrocDesktop.cs',
+    files = ['PackageCroc.py', 'PackageCharacterKit.py', 'docs/releases/croc-v1.4.0-beta.1.md', 'README.md', 'README.zh-CN.md', 'VERSION', 'docs/images/croc-desktop.png', 'character_pack.py', 'character_workbench.py', 'requirements-croc.txt', 'BuildCharacterGuide.py',
+             'docs/character-pack-v1.md', 'docs/Codex角色包生成指令.md',
+             'web/characters.html', 'web/characters.js', 'web/characters.css',
+             'skills/croc-character-pack/SKILL.md', 'skills/croc-character-pack/references/generation.md',
+             'skills/croc-character-pack/references/character-pack-v1.md', 'skills/croc-character-pack/scripts/character_pack.py', 'skills/croc-character-pack/scripts/requirements-croc.txt',
+             'croc.py', 'croc_desktop.py', 'local_quota.py', 'CrocDesktop.cs',
              'CrocCurrentChat.cs', 'CodexTokenHud.cs', 'RuntimeConfiguration.cs',
              'StartCroc.cmd', 'StartCrocDesktop.cmd', 'dashboard.py', 'history.py', 'metrics.py',
              'LICENSE', 'CROC_README.md', 'CROC_RELEASE_NOTES.md', 'web/croc.html', 'web/croc.css',

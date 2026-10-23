@@ -1,0 +1,72 @@
+name: Croc preview release
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+      - .github/workflows/croc-release.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: croc-preview-release
+  cancel-in-progress: false
+jobs:
+  package-and-publish:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install image tooling
+        run: python -m pip install -r requirements-croc.txt
+      - name: Verify Python and shared character contract
+        run: |
+          python -m unittest discover -s tests -p "test_*.py"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python BuildCharacterGuide.py --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build public source and character maker packages
+        run: |
+          python PackageCroc.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python PackageCharacterKit.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Compile and smoke-test original, imported and extracted desktop windows
+        run: python tests/character_release_smoke.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: CrocToken-preview-packages
+          path: |
+            dist/CrocToken-preview-source.zip
+            dist/CrocToken-preview-source.zip.sha256
+            dist/Codex-character-maker-kit.zip
+            dist/Codex-character-maker-kit.zip.sha256
+          if-no-files-found: error
+      - name: Publish verified Croc prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $taskVersion = (Get-Content VERSION -Raw).Trim()
+          if ($taskVersion -notmatch '^\d+\.\d+\.\d+(-[a-z0-9.]+)?$') { throw 'Invalid release version' }
+          $taskTag = "croc-v$taskVersion"
+          $taskHead = git rev-parse HEAD
+          $taskNotes = "docs/releases/$taskTag.md"
+          if (-not (Test-Path -LiteralPath $taskNotes)) { throw 'Versioned release notes are missing' }
+          $taskExisting = gh release view $taskTag --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $taskTagHead = gh api "repos/$env:GH_REPO/git/ref/tags/$taskTag" --jq '.object.sha'
+            if ($LASTEXITCODE -or $taskTagHead -ne $taskHead) { throw 'Existing release points to another commit; refusing to overwrite it' }
+            Write-Output 'This verified release already exists.'
+          } else {
+            gh release create $taskTag dist/CrocToken-preview-source.zip dist/CrocToken-preview-source.zip.sha256 dist/Codex-character-maker-kit.zip dist/Codex-character-maker-kit.zip.sha256 --target $taskHead --prerelease --title "Croc Token HUD $taskVersion" --notes-file $taskNotes
+            if ($LASTEXITCODE) { throw 'Release upload failed' }
+          }

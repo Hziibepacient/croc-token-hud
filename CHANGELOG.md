@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.0-beta.1 — 2026-10-23
+
+Croc desktop preview: add local character workbench, inert eight-pose ZIP import, persistent context-menu character selection, shared Codex generation guide and portable skill. Preserve original crocodile animation. Bound runtime sprites and browser previews to 416 pixels, use 96-pixel library thumbnails, and pause hidden workbench rendering. Add a three-step creation guide and rebuild the project README around the current Windows product. Official/relay quota semantics are unchanged; relay balances remain unimplemented.
+
 ## 1.3.0-beta.8 — 2026-10-13
 
 Windows data is shared through `%USERPROFILE%\.codex-token-hud`, avoiding MSIX AppData redirection between Codex and Task Scheduler. Existing choices migrate without stale telemetry; legacy watcher actions migrate as well. Windows watcher startup is owned by Task Scheduler, so installers and terminals can return normally. Source-process integration checks wait for readiness on cold macOS runtimes.
