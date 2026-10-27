@@ -6,7 +6,7 @@
 
 ![桌面效果，使用模拟数据](docs/images/croc-desktop.png)
 
-**[下载最新预览版](https://github.com/Hziibepacient/croc-token-hud/releases/tag/croc-v1.4.0-beta.2) · [全部版本](https://github.com/Hziibepacient/croc-token-hud/releases) · [详细使用说明](CROC_README.md)**
+**[下载最新预览版](https://github.com/Hziibepacient/croc-token-hud/releases/tag/croc-v1.4.0-beta.3) · [全部版本](https://github.com/Hziibepacient/croc-token-hud/releases) · [详细使用说明](CROC_README.md)**
 
 > 当前提供的是 Windows **源码预览包**，需要 Python 3.10+ 和 Windows .NET Framework 4.x。首次运行自动编译窗口；没有内置 Python，不是免安装运行包。新版发布为预览版时，请在“全部版本”页面下载。
 

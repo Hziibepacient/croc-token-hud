@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.0-beta.3 — 2026-10-27
+
+Replace the generic Windows tray icon with a transparent crocodile portrait derived from bundled artwork. Reuse the icon for the window and release native icon resources on exit.
+
 ## 1.4.0-beta.2 — 2026-10-23
 
 Add custom character names during ZIP import and a rename action for installed characters. Persist names locally and display them in the desktop character menu. Keep artwork, character IDs, selection and package identity intact when renaming; preserve custom names on identical-package reimport. Validate names and add import, persistence, API and failure regressions.

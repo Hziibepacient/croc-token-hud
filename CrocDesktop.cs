@@ -51,6 +51,8 @@ class CrocDesktop : Form {
     Bitmap frame;
     IntPtr surfaceDc=IntPtr.Zero,surfaceBitmap=IntPtr.Zero,surfaceOld=IntPtr.Zero;
     NotifyIcon tray;
+    Icon crocodileIcon;
+    [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
     Dictionary<string,object> state=new Dictionary<string,object>();
     List<Particle> particles=new List<Particle>();
     List<Drop> drops=new List<Drop>();
@@ -104,13 +106,14 @@ class CrocDesktop : Form {
         string art=Path.Combine(root,"web/assets/desktop");
         rest=Image.FromFile(Path.Combine(art,"rest.png"));work=Image.FromFile(Path.Combine(art,"work.png"));poses=Image.FromFile(Path.Combine(art,"poses.png"));
         bottle=Image.FromFile(Path.Combine(art,"bottle.png"));bottleEmpty=Image.FromFile(Path.Combine(art,"bottle-empty.png"));
+        crocodileIcon=MakeTrayIcon(rest);Icon=crocodileIcon;
         CheckCharacter();
         var area=Screen.PrimaryScreen.WorkingArea;Location=new Point(area.Right-450,area.Bottom-230);
         try{var saved=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(runtime,"layout.json")));scale=Convert.ToDouble(saved["scale"]);Location=new Point(Convert.ToInt32(saved["x"]),Convert.ToInt32(saved["y"]));}catch{}
         scale=Math.Max(.7,Math.Min(2,scale));ClientSize=new Size((int)(420*scale),(int)(244*scale));
         bool onScreen=false;foreach(var screen in Screen.AllScreens)if(screen.WorkingArea.IntersectsWith(Bounds))onScreen=true;
         if(!onScreen)Location=new Point(area.Right-Width-20,area.Bottom-Height-20);
-        tray=new NotifyIcon();tray.Icon=SystemIcons.Application;tray.Text="桌面鳄鱼 · 右键设置";tray.Visible=true;
+        tray=new NotifyIcon();tray.Icon=crocodileIcon;tray.Text="桌面鳄鱼 · 右键设置";tray.Visible=true;
         tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Right)Popup().Show(Cursor.Position);else if(e.Button==MouseButtons.Left){visibleScene=true;Show();Render(true);}};
         MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){dragging=true;ReleaseCapture();SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero);dragging=false;Save();}else if(e.Button==MouseButtons.Right)Popup().Show(Cursor.Position);};
         MouseWheel+=(s,e)=>ResizeScene(scale+(e.Delta>0?.1:-.1));
@@ -176,7 +179,7 @@ class CrocDesktop : Form {
                 File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{visible=true,transparent=true,working=true,restored=true,menuCycles=8,modelAndCache=true,animationTimer=true,fiveSpeedTiers=true,bottleCountPreserved=true,bottomDataBar=true,cacheInDataBar=true,quotaPeriodMenu=true,autoFollowChecked=true,currentChatMode=true,poopMotion=true,characterMenu=true,customCharacter=characterId!="builtin-croc",width=Width,height=Height}));
             }catch(Exception error){File.WriteAllText(Path.Combine(runtime,"smoke-result.json"),json.Serialize(new{error=error.ToString()}));}
             Close();check.Dispose();};Shown+=(s,e)=>check.Start();}
-        FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();poses.Dispose();bottle.Dispose();bottleEmpty.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
+        FormClosed+=(s,e)=>{timer.Stop();Save();tray.Dispose();if(crocodileIcon!=null)crocodileIcon.Dispose();contextMenu.Dispose();rest.Dispose();work.Dispose();poses.Dispose();bottle.Dispose();bottleEmpty.Dispose();DisposeSprites();foreach(var f in barFont)if(f!=null)f.Dispose();FreeSurface();};
     }
     void Save(){try{File.WriteAllText(Path.Combine(runtime,"layout.json"),json.Serialize(new{ x=Left,y=Top,scale=scale}));}catch{}}
     void ResizeScene(double value){scale=Math.Max(.7,Math.Min(2,value));ClientSize=new Size((int)(420*scale),(int)(244*scale));Save();Render(true);}
@@ -190,6 +193,28 @@ class CrocDesktop : Form {
             g.DrawImage(source,new Rectangle(0,0,result.Width,result.Height),part.X,part.Y,part.Width,part.Height,GraphicsUnit.Pixel,edges);
         }
         return result;
+    }
+    // Crop the original crocodile face for a readable, transparent tray icon.
+    static Icon MakeTrayIcon(Image strip){
+        int side=strip.Height;
+        using(var first=new Bitmap(side,side,PixelFormat.Format32bppArgb)){
+            using(var g=Graphics.FromImage(first))g.DrawImage(strip,new Rectangle(0,0,side,side),0,0,side,side,GraphicsUnit.Pixel);
+            int left=side,top=side,right=0,bottom=0;
+            for(int y=0;y<side;y++)for(int x=0;x<side;x++)if(first.GetPixel(x,y).A>40){left=Math.Min(left,x);top=Math.Min(top,y);right=Math.Max(right,x+1);bottom=Math.Max(bottom,y+1);}
+            if(right<=left||bottom<=top)throw new InvalidDataException("Crocodile tray image is empty");
+            var face=new Rectangle(left,top,right-left,Math.Max(1,(int)((bottom-top)*.64)));
+            using(var small=new Bitmap(64,64,PixelFormat.Format32bppArgb)){
+                using(var g=Graphics.FromImage(small)){
+                    g.Clear(Color.Transparent);g.InterpolationMode=InterpolationMode.HighQualityBicubic;
+                    float ratio=Math.Min(60f/face.Width,60f/face.Height);
+                    float w=face.Width*ratio,h=face.Height*ratio;
+                    g.DrawImage(first,new RectangleF((64-w)/2,(64-h)/2,w,h),face,GraphicsUnit.Pixel);
+                }
+                IntPtr handle=small.GetHicon();
+                try{using(var temporary=Icon.FromHandle(handle))return (Icon)temporary.Clone();}
+                finally{DestroyIcon(handle);}
+            }
+        }
     }
     // A strip of square frames, side by side.
     static Bitmap[] Frames(Image strip,double factor,bool nearest=false){
